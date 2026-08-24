@@ -1,0 +1,8 @@
+BEGIN;
+
+DROP TABLE IF EXISTS sync_state;
+DROP TABLE IF EXISTS event_logs;
+DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS blocks;
+
+COMMIT;
