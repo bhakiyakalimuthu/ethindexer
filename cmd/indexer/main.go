@@ -55,6 +55,16 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("configure logger: %w", err)
 	}
+	postgresStore, err := store.OpenPostgres(ctx, store.PostgresOptions{
+		URL:            cfg.Database.URL,
+		MaxConnections: cfg.Database.MaxConnections,
+		MinConnections: cfg.Database.MinConnections,
+		ConnectTimeout: cfg.Database.ConnectTimeout.Duration,
+	})
+	if err != nil {
+		return fmt.Errorf("connect to PostgreSQL: %w", err)
+	}
+	defer postgresStore.Close()
 
 	ethClient, err := ethereum.Dial(
 		ctx,
@@ -70,11 +80,8 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("validate Ethereum network: %w", err)
 	}
 
-	memoryStore := store.NewMemory()
-	defer memoryStore.Close()
-
 	fetcher := indexer.NewFetcher(ethClient, cfg.Ethereum.ChainID)
-	syncer := indexer.NewSyncer(fetcher, ethClient, memoryStore, indexer.Config{
+	syncer := indexer.NewSyncer(fetcher, ethClient, postgresStore, indexer.Config{
 		ChainID:         cfg.Ethereum.ChainID,
 		PollInterval:    cfg.Indexer.PollInterval.Duration,
 		BlockWindow:     cfg.Indexer.BlockWindow,

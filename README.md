@@ -27,6 +27,7 @@ The storage package is also intentionally flat:
 ```text
 internal/store/store.go             interfaces
 internal/store/postgres.go          pool lifecycle
+internal/store/postgres_indexer.go  canonical write and reconciliation queries
 internal/store/postgres_blocks.go   future block queries
 internal/store/postgres_events.go   future event queries
 ```
@@ -47,9 +48,9 @@ DATABASE_URL
 
 The executable currently validates configuration, connects to Ethereum RPC,
 verifies the chain ID, concurrently fetches the configured recent block window,
-and stores it in memory. It then polls continuously, fetching only canonical
-changes and retrying transient failures with bounded exponential backoff.
-PostgreSQL and HTTP runtime wiring are intentionally left for later steps.
+and stores it in PostgreSQL. It then polls continuously, fetching only canonical
+changes and retrying transient failures with bounded exponential backoff. Apply
+the SQL migrations before startup. HTTP runtime wiring remains a later step.
 
 ## Live RPC verification
 
@@ -65,7 +66,8 @@ The command fetches `indexer.block_window` blocks with at most
 latest hash, and aggregate transaction and event counts, then waits for the
 configured `indexer.poll_interval`. Stop it with Ctrl-C; SIGINT and SIGTERM
 cancel active RPC work and retry waits before resources are closed. It does not
-print the RPC URL or retain data after exit.
+print the RPC URL. Canonical replacements and retention pruning are committed in
+the same database transaction as blocks, transactions, logs, and sync state.
 
 Repeated synchronization cycles reuse the stored canonical tip. An unchanged
 head performs no block fetches, a canonical extension fetches only new blocks,
@@ -91,3 +93,10 @@ make check
 resource-lifecycle, logging, and formatting checks. `make lint-fix` applies
 supported fixes, while `make fmt` applies the configured gofmt and goimports
 formatters.
+
+The PostgreSQL write path also has an opt-in integration test. It creates and
+drops an isolated schema in the supplied test database:
+
+```text
+TEST_DATABASE_URL="postgres://..." go test -tags=integration ./internal/store
+```
