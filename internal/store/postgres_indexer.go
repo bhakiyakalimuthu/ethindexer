@@ -310,7 +310,7 @@ func queueTransaction(batch *pgx.Batch, transaction domain.Transaction) {
 		postgresNumeric(transaction.GasPrice),
 		postgresNumeric(transaction.MaxFeePerGas),
 		postgresNumeric(transaction.MaxPriorityFeePerGas),
-		transaction.Input,
+		postgresRequiredBytes(transaction.Input),
 	)
 }
 
@@ -327,7 +327,7 @@ func queueEvent(batch *pgx.Batch, event domain.Event) {
 		postgresInt32(event.LogIndex),
 		event.Address.Bytes(),
 		topics,
-		event.Data,
+		postgresRequiredBytes(event.Data),
 	)
 }
 
@@ -483,6 +483,16 @@ func postgresAddress(address *common.Address) any {
 		return nil
 	}
 	return address.Bytes()
+}
+
+// Ethereum represents absent calldata and log data as empty byte slices, while
+// pgx encodes a nil slice as SQL NULL. These columns are required by the schema,
+// so normalize nil at the adapter boundary as defense in depth.
+func postgresRequiredBytes(value []byte) []byte {
+	if value == nil {
+		return []byte{}
+	}
+	return value
 }
 
 func decodeHash(value []byte) (common.Hash, error) {

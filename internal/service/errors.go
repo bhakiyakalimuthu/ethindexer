@@ -11,6 +11,7 @@ var (
 	ErrNotFound     = errors.New("service: not found")
 	ErrInvalidQuery = errors.New("service: invalid query")
 	ErrStaleCursor  = errors.New("service: stale cursor")
+	ErrNotReady     = errors.New("service: not ready")
 )
 
 func translateStoreError(err error) error {

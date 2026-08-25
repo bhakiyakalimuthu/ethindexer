@@ -154,7 +154,7 @@ func (f *Fetcher) mapTransactions(block *types.Block) ([]domain.Transaction, map
 			Recipient:   transaction.To(),
 			Value:       transaction.Value(),
 			GasLimit:    transaction.Gas(),
-			Input:       append([]byte(nil), transaction.Data()...),
+			Input:       append([]byte{}, transaction.Data()...),
 		}
 
 		switch transaction.Type() {
@@ -237,8 +237,8 @@ func mapEvents(
 			TransactionIndex: transactionIndex,
 			LogIndex:         logIndex,
 			Address:          log.Address,
-			Topics:           append([]common.Hash(nil), log.Topics...),
-			Data:             append([]byte(nil), log.Data...),
+			Topics:           append([]common.Hash{}, log.Topics...),
+			Data:             append([]byte{}, log.Data...),
 		})
 	}
 

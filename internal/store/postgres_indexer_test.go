@@ -128,6 +128,19 @@ func TestDecodeHash(t *testing.T) {
 	}
 }
 
+func TestPostgresRequiredBytesConvertsNilToEmpty(t *testing.T) {
+	got := postgresRequiredBytes(nil)
+	if got == nil || len(got) != 0 {
+		t.Fatalf("postgresRequiredBytes(nil) = %#v, want non-nil empty bytes", got)
+	}
+
+	want := []byte{0xde, 0xad}
+	got = postgresRequiredBytes(want)
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("postgresRequiredBytes(value) = %x, want %x", got, want)
+	}
+}
+
 func TestDecodePostgresNumeric(t *testing.T) {
 	tests := []struct {
 		name    string

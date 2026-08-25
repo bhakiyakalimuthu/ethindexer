@@ -97,16 +97,16 @@ func Default() Config {
 		},
 		Ethereum: Ethereum{
 			ChainID:        1,
-			RPCTimeout:     Duration{Duration: 10 * time.Second},
-			RPCConcurrency: 8,
+			RPCTimeout:     Duration{Duration: 30 * time.Second},
+			RPCConcurrency: 4,
 		},
 		Indexer: Indexer{
 			PollInterval:    Duration{Duration: 4 * time.Second},
 			BlockWindow:     50,
 			HeadMode:        domain.HeadLatest,
 			RetryAttempts:   3,
-			RetryMinBackoff: Duration{Duration: 250 * time.Millisecond},
-			RetryMaxBackoff: Duration{Duration: 5 * time.Second},
+			RetryMinBackoff: Duration{Duration: time.Second},
+			RetryMaxBackoff: Duration{Duration: 10 * time.Second},
 		},
 		Database: Database{
 			MaxConnections: 12,

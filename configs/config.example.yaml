@@ -13,16 +13,16 @@ ethereum:
   # Prefer the ETH_RPC_URL environment variable for real credentials.
   rpc_url: "http://localhost:8545"
   chain_id: 1
-  rpc_timeout: 10s
-  rpc_concurrency: 8
+  rpc_timeout: 30s
+  rpc_concurrency: 4
 
 indexer:
   poll_interval: 4s
   block_window: 50
   head_mode: latest
   retry_attempts: 3
-  retry_min_backoff: 250ms
-  retry_max_backoff: 5s
+  retry_min_backoff: 1s
+  retry_max_backoff: 10s
 
 database:
   # Prefer the DATABASE_URL environment variable outside local development.

@@ -98,8 +98,10 @@ func run(ctx context.Context, args []string) error {
 	}, logger)
 
 	queries := service.NewQueryService(postgresStore)
+	health := service.NewHealthService(postgresStore)
 	handler := server.NewServer(server.Server{
 		QueryService:   queries,
+		HealthService:  health,
 		Logger:         logger,
 		RequestTimeout: cfg.HTTP.RequestTimeout.Duration,
 	})

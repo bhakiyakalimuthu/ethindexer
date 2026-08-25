@@ -47,6 +47,20 @@ database:
 	if cfg.HTTP.RequestTimeout.Duration != 5*time.Second {
 		t.Fatalf("request timeout = %s", cfg.HTTP.RequestTimeout.Duration)
 	}
+	if cfg.Ethereum.RPCTimeout.Duration != 30*time.Second {
+		t.Fatalf("RPC timeout = %s", cfg.Ethereum.RPCTimeout.Duration)
+	}
+	if cfg.Ethereum.RPCConcurrency != 4 {
+		t.Fatalf("RPC concurrency = %d", cfg.Ethereum.RPCConcurrency)
+	}
+	if cfg.Indexer.RetryMinBackoff.Duration != time.Second ||
+		cfg.Indexer.RetryMaxBackoff.Duration != 10*time.Second {
+		t.Fatalf(
+			"retry backoff = [%s,%s]",
+			cfg.Indexer.RetryMinBackoff.Duration,
+			cfg.Indexer.RetryMaxBackoff.Duration,
+		)
+	}
 }
 
 func TestLoadRejectsUnknownFields(t *testing.T) {

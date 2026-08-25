@@ -27,6 +27,9 @@ func TestPostgresCanonicalUpdateLifecycle(t *testing.T) {
 	block10 := memoryTestBundle(10, common.HexToHash("0x09"), common.HexToHash("0x10"), common.HexToHash("0xa10"), address)
 	block11 := memoryTestBundle(11, block10.Block.Hash, common.HexToHash("0x11"), common.HexToHash("0xa11"), address)
 	block12 := memoryTestBundle(12, block11.Block.Hash, common.HexToHash("0x12"), common.HexToHash("0xa12"), address)
+	block10.Transactions[0].Input = nil
+	block10.Events[0].Topics = nil
+	block10.Events[0].Data = nil
 	indexedAt := time.Now().UTC().Truncate(time.Microsecond)
 	setBundleTimes(indexedAt, &block10, &block11, &block12)
 

@@ -40,6 +40,14 @@ func TestFetcherFetchBlockBuildsCompleteBundle(t *testing.T) {
 			BlockHash:   blockHash,
 			Index:       0,
 		},
+		{
+			Address:     contract,
+			BlockNumber: blockNumber,
+			TxHash:      block.Transactions()[2].Hash(),
+			TxIndex:     2,
+			BlockHash:   blockHash,
+			Index:       2,
+		},
 	}
 
 	var blockCalls, logCalls int
@@ -78,7 +86,7 @@ func TestFetcherFetchBlockBuildsCompleteBundle(t *testing.T) {
 	if !bundle.Block.IndexedAt.Equal(indexedAt.UTC()) {
 		t.Fatalf("indexed at = %s, want %s", bundle.Block.IndexedAt, indexedAt.UTC())
 	}
-	if bundle.Block.TransactionCount != 2 || len(bundle.Transactions) != 2 {
+	if bundle.Block.TransactionCount != 3 || len(bundle.Transactions) != 3 {
 		t.Fatalf("transactions = %d, count = %d", len(bundle.Transactions), bundle.Block.TransactionCount)
 	}
 	if bundle.Transactions[0].Sender != expectedSender {
@@ -102,8 +110,18 @@ func TestFetcherFetchBlockBuildsCompleteBundle(t *testing.T) {
 			bundle.Transactions[1].MaxPriorityFeePerGas,
 		)
 	}
-	if len(bundle.Events) != 2 || bundle.Events[0].LogIndex != 0 || bundle.Events[1].LogIndex != 1 {
+	if bundle.Transactions[2].Input == nil || len(bundle.Transactions[2].Input) != 0 {
+		t.Fatalf("empty transaction input = %#v, want non-nil empty bytes", bundle.Transactions[2].Input)
+	}
+	if len(bundle.Events) != 3 ||
+		bundle.Events[0].LogIndex != 0 ||
+		bundle.Events[1].LogIndex != 1 ||
+		bundle.Events[2].LogIndex != 2 {
 		t.Fatalf("events are not sorted by log index: %#v", bundle.Events)
+	}
+	if bundle.Events[2].Topics == nil || len(bundle.Events[2].Topics) != 0 ||
+		bundle.Events[2].Data == nil || len(bundle.Events[2].Data) != 0 {
+		t.Fatalf("empty event payload = %#v, want non-nil empty collections", bundle.Events[2])
 	}
 	if bundle.Events[0].TransactionHash != block.Transactions()[0].Hash() {
 		t.Fatalf("first event transaction = %s", bundle.Events[0].TransactionHash)
@@ -205,6 +223,13 @@ func signedTestBlock(t *testing.T, number uint64) (*types.Block, common.Address)
 		GasTipCap: big.NewInt(2),
 		Data:      []byte{0x02},
 	})
+	emptyInput := types.MustSignNewTx(key, signer, &types.LegacyTx{
+		Nonce:    3,
+		To:       &recipient,
+		Value:    big.NewInt(0),
+		Gas:      21_000,
+		GasPrice: big.NewInt(2),
+	})
 
 	header := &types.Header{
 		Number:     new(big.Int).SetUint64(number),
@@ -215,7 +240,7 @@ func signedTestBlock(t *testing.T, number uint64) (*types.Block, common.Address)
 		BaseFee:    big.NewInt(1_000_000_000),
 	}
 	block := types.NewBlockWithHeader(header).WithBody(types.Body{
-		Transactions: []*types.Transaction{legacy, dynamic},
+		Transactions: []*types.Transaction{legacy, dynamic, emptyInput},
 	})
 	return block, crypto.PubkeyToAddress(key.PublicKey)
 }
