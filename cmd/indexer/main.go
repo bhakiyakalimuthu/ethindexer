@@ -89,6 +89,7 @@ func run(ctx context.Context, args []string) error {
 		Str("environment", cfg.App.Environment).
 		Uint64("chain_id", cfg.Ethereum.ChainID).
 		Uint64("from_block", result.FromBlock).
+		Uint64("replace_from", result.ReplaceFrom).
 		Uint64("to_block", result.Head.Number).
 		Str("head_hash", result.Head.Hash.Hex()).
 		Int("blocks", result.BlockCount).

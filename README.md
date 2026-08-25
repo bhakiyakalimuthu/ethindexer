@@ -65,6 +65,12 @@ The command fetches `indexer.block_window` blocks with at most
 latest hash, and aggregate transaction and event counts. It does not print the
 RPC URL or retain data after exit.
 
+Repeated synchronization cycles reuse the stored canonical tip. An unchanged
+head performs no block fetches, a canonical extension fetches only new blocks,
+and a reorganization replaces blocks after the nearest common ancestor within
+the retained window. If no retained ancestor exists, the current window is
+fetched in full.
+
 ## Development checks
 
 ```text

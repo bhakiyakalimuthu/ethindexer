@@ -2,7 +2,9 @@ package indexer
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"ethindexer/internal/ethereum"
 	"ethindexer/internal/store"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/rs/zerolog"
@@ -48,8 +51,11 @@ func NewSyncer(fetcher *Fetcher, chain ethereum.Reader, indexStore store.IndexSt
 }
 
 type SyncResult struct {
-	Head             domain.ChainTip
-	FromBlock        uint64
+	Head domain.ChainTip
+	// FromBlock is the lower bound of the retained canonical window.
+	FromBlock uint64
+	// ReplaceFrom is the first block fetched or removed during this cycle.
+	ReplaceFrom      uint64
 	BlockCount       int
 	TransactionCount int
 	EventCount       int
@@ -70,38 +76,51 @@ func (s *Syncer) SyncOnce(ctx context.Context) (SyncResult, error) {
 		return SyncResult{}, err
 	}
 
-	fromBlock := windowStart(headNumber, s.config.BlockWindow)
-	bundles, err := s.fetcher.FetchRange(
-		ctx,
-		fromBlock,
-		headNumber,
-		s.config.RPCConcurrency,
-	)
+	retainFrom := windowStart(headNumber, s.config.BlockWindow)
+	selectedHash := head.Hash()
+	storedTip, err := s.store.CanonicalTip(ctx)
 	if err != nil {
-		return SyncResult{}, fmt.Errorf("fetch canonical window [%d,%d]: %w", fromBlock, headNumber, err)
+		return SyncResult{}, fmt.Errorf("read stored canonical tip: %w", err)
 	}
 
-	selectedHash := head.Hash()
-	fetchedHash := bundles[len(bundles)-1].Block.Hash
-	if fetchedHash != selectedHash {
-		return SyncResult{}, fmt.Errorf(
-			"%w: block %d was %s and became %s",
-			ErrHeadChanged,
+	replaceFrom, err := s.replacementStart(ctx, storedTip, headNumber, selectedHash, retainFrom)
+	if err != nil {
+		return SyncResult{}, err
+	}
+
+	var bundles []domain.BlockBundle
+	if replaceFrom <= headNumber {
+		bundles, err = s.fetcher.FetchRange(
+			ctx,
+			replaceFrom,
 			headNumber,
-			selectedHash,
-			fetchedHash,
+			s.config.RPCConcurrency,
 		)
+		if err != nil {
+			return SyncResult{}, fmt.Errorf("fetch canonical range [%d,%d]: %w", replaceFrom, headNumber, err)
+		}
+
+		fetchedHash := bundles[len(bundles)-1].Block.Hash
+		if fetchedHash != selectedHash {
+			return SyncResult{}, fmt.Errorf(
+				"%w: block %d was %s and became %s",
+				ErrHeadChanged,
+				headNumber,
+				selectedHash,
+				fetchedHash,
+			)
+		}
 	}
 
 	syncedAt := s.now().UTC()
 	if err := s.store.ApplyCanonicalUpdate(ctx, domain.CanonicalUpdate{
 		ChainID:     s.config.ChainID,
-		ReplaceFrom: fromBlock,
-		RetainFrom:  fromBlock,
+		ReplaceFrom: replaceFrom,
+		RetainFrom:  retainFrom,
 		Blocks:      bundles,
 		SyncedAt:    syncedAt,
 	}); err != nil {
-		return SyncResult{}, fmt.Errorf("apply canonical window [%d,%d]: %w", fromBlock, headNumber, err)
+		return SyncResult{}, fmt.Errorf("apply canonical update from block %d: %w", replaceFrom, err)
 	}
 
 	result := SyncResult{
@@ -109,15 +128,116 @@ func (s *Syncer) SyncOnce(ctx context.Context) (SyncResult, error) {
 			Number: headNumber,
 			Hash:   selectedHash,
 		},
-		FromBlock:  fromBlock,
-		BlockCount: len(bundles),
-		SyncedAt:   syncedAt,
+		FromBlock:   retainFrom,
+		ReplaceFrom: replaceFrom,
+		BlockCount:  len(bundles),
+		SyncedAt:    syncedAt,
 	}
 	for _, bundle := range bundles {
 		result.TransactionCount += len(bundle.Transactions)
 		result.EventCount += len(bundle.Events)
 	}
 	return result, nil
+}
+
+func (s *Syncer) replacementStart(
+	ctx context.Context,
+	storedTip *domain.ChainTip,
+	headNumber uint64,
+	headHash common.Hash,
+	retainFrom uint64,
+) (uint64, error) {
+	if storedTip == nil || storedTip.Number > headNumber || storedTip.Number < retainFrom {
+		return retainFrom, nil
+	}
+
+	if storedTip.Number == headNumber && storedTip.Hash == headHash {
+		if headNumber == math.MaxUint64 {
+			return 0, fmt.Errorf("%w: cannot advance past maximum block number", ErrInconsistentBlockData)
+		}
+		return headNumber + 1, nil
+	}
+
+	ancestor, found, err := s.commonAncestor(ctx, *storedTip, headNumber, headHash, retainFrom)
+	if err != nil {
+		return 0, err
+	}
+	if !found {
+		return retainFrom, nil
+	}
+	if ancestor == math.MaxUint64 {
+		return 0, fmt.Errorf("%w: cannot advance past maximum block number", ErrInconsistentBlockData)
+	}
+	return ancestor + 1, nil
+}
+
+func (s *Syncer) commonAncestor(
+	ctx context.Context,
+	storedTip domain.ChainTip,
+	headNumber uint64,
+	headHash common.Hash,
+	retainFrom uint64,
+) (uint64, bool, error) {
+	start := min(storedTip.Number, headNumber)
+	for number := start; ; number-- {
+		storedHash, err := s.storedHash(ctx, storedTip, number)
+		if errors.Is(err, store.ErrNotFound) {
+			return 0, false, nil
+		}
+		if err != nil {
+			return 0, false, fmt.Errorf("read stored canonical hash for block %d: %w", number, err)
+		}
+
+		chainHash, err := s.chainHash(ctx, number, headNumber, headHash)
+		if err != nil {
+			return 0, false, err
+		}
+		if storedHash == chainHash {
+			return number, true, nil
+		}
+		if number == retainFrom {
+			return 0, false, nil
+		}
+	}
+}
+
+func (s *Syncer) storedHash(ctx context.Context, storedTip domain.ChainTip, number uint64) (common.Hash, error) {
+	if number == storedTip.Number {
+		return storedTip.Hash, nil
+	}
+	return s.store.CanonicalHash(ctx, number)
+}
+
+func (s *Syncer) chainHash(
+	ctx context.Context,
+	number uint64,
+	headNumber uint64,
+	headHash common.Hash,
+) (common.Hash, error) {
+	if number == headNumber {
+		return headHash, nil
+	}
+
+	header, err := s.chain.HeaderByNumber(ctx, new(big.Int).SetUint64(number))
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("read canonical header %d: %w", number, err)
+	}
+	if header == nil {
+		return common.Hash{}, fmt.Errorf("%w: canonical header %d is nil", ErrInconsistentBlockData, number)
+	}
+	actualNumber, err := validHeaderNumber(header)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if actualNumber != number {
+		return common.Hash{}, fmt.Errorf(
+			"%w: requested header %d, received header %d",
+			ErrInconsistentBlockData,
+			number,
+			actualNumber,
+		)
+	}
+	return header.Hash(), nil
 }
 
 func (s *Syncer) validateSyncOnceConfig() error {
