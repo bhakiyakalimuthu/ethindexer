@@ -10,7 +10,10 @@ import (
 	"strings"
 
 	"ethindexer/internal/config"
+	"ethindexer/internal/domain"
 	"ethindexer/internal/ethereum"
+	"ethindexer/internal/indexer"
+	"ethindexer/internal/store"
 
 	"github.com/rs/zerolog"
 )
@@ -59,12 +62,56 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("validate Ethereum network: %w", err)
 	}
 
+	memoryStore := store.NewMemory()
+	defer memoryStore.Close()
+
+	block, eventCount, err := verifyLatestBlock(ctx, ethClient, memoryStore, cfg.Ethereum.ChainID)
+	if err != nil {
+		return err
+	}
+
 	logger.Info().
 		Str("environment", cfg.App.Environment).
 		Uint64("chain_id", cfg.Ethereum.ChainID).
-		Msg("Ethereum RPC client connected")
+		Uint64("block_number", block.Block.Number).
+		Str("block_hash", block.Block.Hash.Hex()).
+		Int("transactions", len(block.TransactionHashes)).
+		Int("events", eventCount).
+		Msg("latest Ethereum block fetched and verified in memory")
 
 	return nil
+}
+
+func verifyLatestBlock(
+	ctx context.Context,
+	chain ethereum.Reader,
+	memoryStore store.Store,
+	chainID uint64,
+) (domain.BlockResult, int, error) {
+	blockNumber, err := chain.BlockNumber(ctx)
+	if err != nil {
+		return domain.BlockResult{}, 0, fmt.Errorf("read latest block number: %w", err)
+	}
+
+	bundle, err := indexer.NewFetcher(chain, chainID).FetchBlock(ctx, blockNumber)
+	if err != nil {
+		return domain.BlockResult{}, 0, fmt.Errorf("fetch latest block bundle: %w", err)
+	}
+	if err := memoryStore.ApplyCanonicalUpdate(ctx, domain.CanonicalUpdate{
+		ChainID:     chainID,
+		ReplaceFrom: blockNumber,
+		RetainFrom:  blockNumber,
+		Blocks:      []domain.BlockBundle{bundle},
+		SyncedAt:    bundle.Block.IndexedAt,
+	}); err != nil {
+		return domain.BlockResult{}, 0, fmt.Errorf("store latest block bundle: %w", err)
+	}
+
+	storedBlock, err := memoryStore.BlockByNumber(ctx, blockNumber)
+	if err != nil {
+		return domain.BlockResult{}, 0, fmt.Errorf("read stored block %d: %w", blockNumber, err)
+	}
+	return storedBlock, len(bundle.Events), nil
 }
 
 func configPathFromEnvironment() string {

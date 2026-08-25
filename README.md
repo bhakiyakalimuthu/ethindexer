@@ -12,7 +12,6 @@ internal/config/        strict loading, environment overrides, validation
 internal/domain/        storage-independent domain records
 internal/ethereum/      narrow ethclient boundary
 internal/indexer/       polling and reconciliation owner
-internal/logging/       zerolog construction
 internal/server/        Chi router and handler boundary
 internal/service/       API query use cases
 internal/store/         store contracts and flat adapter files
@@ -46,9 +45,22 @@ DATABASE_URL
 
 `CONFIG_FILE` changes the default path. The `-config` flag takes precedence.
 
-The executable currently validates configuration, constructs logging, connects
-to Ethereum RPC, and verifies the configured chain ID. Store, indexer, and HTTP
+The executable currently validates configuration, connects to Ethereum RPC,
+verifies the chain ID, fetches the latest block bundle, stores it in memory, and
+reads the block back for a one-shot verification. PostgreSQL, polling, and HTTP
 runtime wiring are intentionally left for later steps.
+
+## Live RPC verification
+
+Set a mainnet RPC URL without adding it to the configuration file:
+
+```text
+export ETH_RPC_URL="https://your-mainnet-provider.example"
+go run ./cmd/indexer -config configs/config.example.yaml
+```
+
+The command prints the fetched block number and hash together with transaction
+and event counts. It does not print the RPC URL or retain data after exit.
 
 ## Development checks
 
