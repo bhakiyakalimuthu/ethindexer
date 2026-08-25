@@ -9,6 +9,7 @@ import (
 	"ethindexer/internal/domain"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestValidatePostgresUpdateAcceptsCanonicalBundle(t *testing.T) {
@@ -124,5 +125,52 @@ func TestDecodeHash(t *testing.T) {
 	_, err = decodeHash(make([]byte, common.HashLength-1))
 	if !errors.Is(err, ErrInconsistentData) {
 		t.Fatalf("decodeHash(short) error = %v, want ErrInconsistentData", err)
+	}
+}
+
+func TestDecodePostgresNumeric(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   pgtype.Numeric
+		want    string
+		wantErr bool
+	}{
+		{
+			name:  "positive exponent",
+			value: pgtype.Numeric{Int: big.NewInt(123), Exp: 2, Valid: true},
+			want:  "12300",
+		},
+		{
+			name:  "exact negative exponent",
+			value: pgtype.Numeric{Int: big.NewInt(12300), Exp: -2, Valid: true},
+			want:  "123",
+		},
+		{
+			name:    "fractional",
+			value:   pgtype.Numeric{Int: big.NewInt(123), Exp: -2, Valid: true},
+			wantErr: true,
+		},
+		{
+			name:    "not finite",
+			value:   pgtype.Numeric{NaN: true, Valid: true},
+			wantErr: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			value, err := decodePostgresNumeric("test numeric", test.value, true)
+			if test.wantErr {
+				if !errors.Is(err, ErrInconsistentData) {
+					t.Fatalf("decodePostgresNumeric() error = %v, want ErrInconsistentData", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("decodePostgresNumeric() error = %v", err)
+			}
+			if value.String() != test.want {
+				t.Fatalf("decodePostgresNumeric() = %s, want %s", value, test.want)
+			}
+		})
 	}
 }

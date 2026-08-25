@@ -76,6 +76,18 @@ func TestValidateRejectsNonMainnetConfiguration(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsBlockWindowAboveV1RetentionLimit(t *testing.T) {
+	cfg := Default()
+	cfg.Ethereum.RPCURL = "https://mainnet.example.invalid"
+	cfg.Database.URL = "postgres://db:5432/indexer"
+	cfg.Indexer.BlockWindow = domain.MaxBlockWindow + 1
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "block_window must be between 1 and 50") {
+		t.Fatalf("Validate() error = %v, want block-window limit error", err)
+	}
+}
+
 func writeConfig(t *testing.T, contents string) string {
 	t.Helper()
 

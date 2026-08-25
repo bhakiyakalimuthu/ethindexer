@@ -143,6 +143,15 @@ func TestMemoryCanonicalReplacementRemovesOldFork(t *testing.T) {
 	}
 }
 
+func TestMemoryRejectsEventPageAboveLimit(t *testing.T) {
+	_, err := NewMemory().EventsByAddress(context.Background(), domain.EventQuery{
+		Limit: domain.MaxEventPageSize + 1,
+	})
+	if !errors.Is(err, ErrInvalidQuery) {
+		t.Fatalf("EventsByAddress() error = %v, want ErrInvalidQuery", err)
+	}
+}
+
 func TestMemoryRejectsInvalidUpdateAtomically(t *testing.T) {
 	ctx := context.Background()
 	block10 := memoryTestBundle(10, common.HexToHash("0x09"), common.HexToHash("0x10"), common.HexToHash("0xa10"), common.Address{})

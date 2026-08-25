@@ -264,6 +264,7 @@ func TestSyncOnceRejectsInvalidConfigBeforeRPC(t *testing.T) {
 	}{
 		{name: "chain ID", change: func(config *Config) { config.ChainID = 0 }},
 		{name: "block window", change: func(config *Config) { config.BlockWindow = 0 }},
+		{name: "block window above V1 limit", change: func(config *Config) { config.BlockWindow = domain.MaxBlockWindow + 1 }},
 		{name: "RPC concurrency", change: func(config *Config) { config.RPCConcurrency = 0 }},
 		{name: "head mode", change: func(config *Config) { config.HeadMode = domain.HeadMode("pending") }},
 	}

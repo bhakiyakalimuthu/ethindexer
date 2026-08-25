@@ -167,6 +167,14 @@ func (m *Memory) EventsByAddress(ctx context.Context, query domain.EventQuery) (
 	if err := ctx.Err(); err != nil {
 		return domain.EventPage{}, err
 	}
+	if query.Limit > domain.MaxEventPageSize {
+		return domain.EventPage{}, fmt.Errorf(
+			"%w: event page limit %d exceeds maximum %d",
+			ErrInvalidQuery,
+			query.Limit,
+			domain.MaxEventPageSize,
+		)
+	}
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()

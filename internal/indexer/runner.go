@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"ethindexer/internal/store"
+
 	"github.com/rs/zerolog"
 )
 
@@ -133,7 +135,10 @@ func (s *Syncer) logSyncResult(result SyncResult) {
 }
 
 func isPermanentSyncError(err error) bool {
-	return errors.Is(err, ErrInvalidSyncConfig) || errors.Is(err, ErrInvalidSyncDependency)
+	return errors.Is(err, ErrInvalidSyncConfig) ||
+		errors.Is(err, ErrInvalidSyncDependency) ||
+		errors.Is(err, store.ErrInvalidCanonicalUpdate) ||
+		errors.Is(err, store.ErrInconsistentData)
 }
 
 func nextRetryBackoff(current, maximum time.Duration) time.Duration {

@@ -254,8 +254,8 @@ func (s *Syncer) validateSyncOnceConfig() error {
 		return fmt.Errorf("%w: chain ID must be greater than zero", ErrInvalidSyncConfig)
 	case s.fetcher.chainID == nil || !s.fetcher.chainID.IsUint64() || s.fetcher.chainID.Uint64() != s.config.ChainID:
 		return fmt.Errorf("%w: fetcher chain ID does not match sync config", ErrInvalidSyncDependency)
-	case s.config.BlockWindow == 0:
-		return fmt.Errorf("%w: block window must be greater than zero", ErrInvalidSyncConfig)
+	case s.config.BlockWindow == 0 || s.config.BlockWindow > domain.MaxBlockWindow:
+		return fmt.Errorf("%w: block window must be between 1 and %d", ErrInvalidSyncConfig, domain.MaxBlockWindow)
 	case s.config.RPCConcurrency < 1:
 		return fmt.Errorf("%w: RPC concurrency must be greater than zero", ErrInvalidSyncConfig)
 	}

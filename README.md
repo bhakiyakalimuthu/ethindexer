@@ -28,8 +28,10 @@ The storage package is also intentionally flat:
 internal/store/store.go             interfaces
 internal/store/postgres.go          pool lifecycle
 internal/store/postgres_indexer.go  canonical write and reconciliation queries
-internal/store/postgres_blocks.go   future block queries
-internal/store/postgres_events.go   future event queries
+internal/store/postgres_blocks.go   block queries
+internal/store/postgres_transactions.go transaction queries
+internal/store/postgres_events.go   event queries and cursor pagination
+internal/store/postgres_scan.go     PostgreSQL-to-domain decoding
 ```
 
 A future Redis adapter, if it becomes justified, would be a separate flat file
@@ -68,12 +70,19 @@ configured `indexer.poll_interval`. Stop it with Ctrl-C; SIGINT and SIGTERM
 cancel active RPC work and retry waits before resources are closed. It does not
 print the RPC URL. Canonical replacements and retention pruning are committed in
 the same database transaction as blocks, transactions, logs, and sync state.
+Large canonical writes are flushed in batches of at most 1,000 SQL statements
+inside that transaction, and a transaction-level advisory lock serializes
+cooperating indexer instances without blocking table reads.
 
 Repeated synchronization cycles reuse the stored canonical tip. An unchanged
 head performs no block fetches, a canonical extension fetches only new blocks,
 and a reorganization replaces blocks after the nearest common ancestor within
 the retained window. If no retained ancestor exists, the current window is
 fetched in full.
+
+V1 enforces a retention window of at most 50 blocks. Address-event queries are
+cursor-paginated newest first and accept at most 1,000 events per page; a cursor
+whose block hash is no longer canonical is rejected as stale.
 
 ## Development checks
 

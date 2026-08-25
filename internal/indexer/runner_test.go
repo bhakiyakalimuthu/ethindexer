@@ -78,6 +78,34 @@ func TestSyncWithRetryDoesNotRetryPermanentErrors(t *testing.T) {
 	}
 }
 
+func TestSyncWithRetryDoesNotRetryInvalidStoreUpdate(t *testing.T) {
+	syncer := &Syncer{
+		config: Config{
+			RetryAttempts:   3,
+			RetryMinBackoff: time.Millisecond,
+			RetryMaxBackoff: time.Second,
+		},
+		logger: zerolog.Nop(),
+	}
+	waitCalls := 0
+	syncer.wait = func(context.Context, time.Duration) error {
+		waitCalls++
+		return nil
+	}
+
+	syncCalls := 0
+	_, err := syncer.syncWithRetry(context.Background(), func(context.Context) (SyncResult, error) {
+		syncCalls++
+		return SyncResult{}, store.ErrInvalidCanonicalUpdate
+	})
+	if !errors.Is(err, store.ErrInvalidCanonicalUpdate) {
+		t.Fatalf("syncWithRetry() error = %v, want store.ErrInvalidCanonicalUpdate", err)
+	}
+	if syncCalls != 1 || waitCalls != 0 {
+		t.Fatalf("sync calls = %d, wait calls = %d, want 1 and 0", syncCalls, waitCalls)
+	}
+}
+
 func TestSyncWithRetryStopsDuringBackoffCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	syncer := &Syncer{

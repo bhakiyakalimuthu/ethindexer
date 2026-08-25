@@ -190,8 +190,8 @@ func (cfg Config) Validate() error {
 	}
 
 	problems = append(problems, positiveDuration("indexer.poll_interval", cfg.Indexer.PollInterval))
-	if cfg.Indexer.BlockWindow == 0 {
-		problems = append(problems, errors.New("indexer.block_window must be greater than zero"))
+	if cfg.Indexer.BlockWindow == 0 || cfg.Indexer.BlockWindow > domain.MaxBlockWindow {
+		problems = append(problems, fmt.Errorf("indexer.block_window must be between 1 and %d", domain.MaxBlockWindow))
 	}
 	switch cfg.Indexer.HeadMode {
 	case domain.HeadLatest, domain.HeadSafe, domain.HeadFinalized:

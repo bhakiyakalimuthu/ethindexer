@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"strings"
 	"testing"
@@ -71,6 +72,7 @@ func TestPostgresCanonicalUpdateLifecycle(t *testing.T) {
 	assertRowCount(t, postgres, "event_logs", "transaction_hash", block12.Transactions[0].Hash.Bytes(), 0)
 	assertRowCount(t, postgres, "event_logs", "transaction_hash", replacement12.Transactions[0].Hash.Bytes(), 1)
 	assertPostgresSyncState(t, postgres, 1, 12, replacement12.Block.Hash, indexedAt.Add(2*time.Second))
+	assertPostgresQueries(t, postgres, block11, replacement12, address)
 
 	badBlock13 := memoryTestBundle(13, common.HexToHash("0xdead"), common.HexToHash("0x13"), common.HexToHash("0xa13"), address)
 	setBundleTimes(indexedAt.Add(3*time.Second), &badBlock13)
@@ -97,6 +99,124 @@ func TestPostgresCanonicalUpdateLifecycle(t *testing.T) {
 	}
 	assertPostgresTip(t, postgres, 12, replacement12.Block.Hash)
 	assertPostgresSyncState(t, postgres, 1, 12, replacement12.Block.Hash, indexedAt.Add(2*time.Second))
+}
+
+func TestPostgresCanonicalUpdateFlushesBoundedBatches(t *testing.T) {
+	postgres := newPostgresIntegrationStore(t)
+	ctx := context.Background()
+	blockHash := common.HexToHash("0x100")
+	transactions := make([]domain.Transaction, canonicalBatchQueryLimit+1)
+	for index := range transactions {
+		transactions[index] = domain.Transaction{
+			Hash:        common.BigToHash(big.NewInt(int64(index + 1))),
+			BlockNumber: 1,
+			BlockHash:   blockHash,
+			Index:       uint32(index),
+			Value:       big.NewInt(1),
+		}
+	}
+	bundle := domain.BlockBundle{
+		Block: domain.Block{
+			Number:           1,
+			Hash:             blockHash,
+			ParentHash:       common.HexToHash("0x99"),
+			TransactionCount: len(transactions),
+			IndexedAt:        time.Now().UTC(),
+		},
+		Transactions: transactions,
+	}
+
+	if err := postgres.ApplyCanonicalUpdate(ctx, domain.CanonicalUpdate{
+		ChainID:     1,
+		ReplaceFrom: 1,
+		RetainFrom:  1,
+		Blocks:      []domain.BlockBundle{bundle},
+		SyncedAt:    time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("ApplyCanonicalUpdate() across batches error = %v", err)
+	}
+	result, err := postgres.BlockByNumber(ctx, 1)
+	if err != nil {
+		t.Fatalf("BlockByNumber() error = %v", err)
+	}
+	if len(result.TransactionHashes) != len(transactions) {
+		t.Fatalf("transaction hash count = %d, want %d", len(result.TransactionHashes), len(transactions))
+	}
+}
+
+func assertPostgresQueries(
+	t *testing.T,
+	postgres *Postgres,
+	block11 domain.BlockBundle,
+	block12 domain.BlockBundle,
+	address common.Address,
+) {
+	t.Helper()
+	ctx := context.Background()
+
+	blockResult, err := postgres.BlockByNumber(ctx, block11.Block.Number)
+	if err != nil {
+		t.Fatalf("BlockByNumber() error = %v", err)
+	}
+	if blockResult.Block.Hash != block11.Block.Hash ||
+		len(blockResult.TransactionHashes) != 1 ||
+		blockResult.TransactionHashes[0] != block11.Transactions[0].Hash {
+		t.Fatalf("BlockByNumber() = %#v", blockResult)
+	}
+	if _, err := postgres.BlockByNumber(ctx, 10); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("pruned BlockByNumber() error = %v, want ErrNotFound", err)
+	}
+
+	transactionResult, err := postgres.TransactionByHash(ctx, block12.Transactions[0].Hash)
+	if err != nil {
+		t.Fatalf("TransactionByHash() error = %v", err)
+	}
+	if transactionResult.Transaction.BlockHash != block12.Block.Hash ||
+		len(transactionResult.Events) != 1 ||
+		transactionResult.Events[0].TransactionHash != block12.Transactions[0].Hash {
+		t.Fatalf("TransactionByHash() = %#v", transactionResult)
+	}
+	if _, err := postgres.TransactionByHash(ctx, common.HexToHash("0xdead")); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing TransactionByHash() error = %v, want ErrNotFound", err)
+	}
+
+	firstPage, err := postgres.EventsByAddress(ctx, domain.EventQuery{Address: address, Limit: 1})
+	if err != nil {
+		t.Fatalf("EventsByAddress() error = %v", err)
+	}
+	if len(firstPage.Events) != 1 || firstPage.Events[0].BlockHash != block12.Block.Hash || firstPage.NextCursor == nil {
+		t.Fatalf("first EventsByAddress() page = %#v", firstPage)
+	}
+	secondPage, err := postgres.EventsByAddress(ctx, domain.EventQuery{
+		Address: address,
+		Limit:   1,
+		Before:  firstPage.NextCursor,
+	})
+	if err != nil {
+		t.Fatalf("EventsByAddress(second page) error = %v", err)
+	}
+	if len(secondPage.Events) != 1 || secondPage.Events[0].BlockHash != block11.Block.Hash || secondPage.NextCursor != nil {
+		t.Fatalf("second EventsByAddress() page = %#v", secondPage)
+	}
+
+	staleCursor := *firstPage.NextCursor
+	staleCursor.BlockHash = common.HexToHash("0xdead")
+	_, err = postgres.EventsByAddress(ctx, domain.EventQuery{
+		Address: address,
+		Limit:   1,
+		Before:  &staleCursor,
+	})
+	if !errors.Is(err, ErrStaleCursor) {
+		t.Fatalf("stale EventsByAddress() error = %v, want ErrStaleCursor", err)
+	}
+
+	_, err = postgres.EventsByAddress(ctx, domain.EventQuery{
+		Address: address,
+		Limit:   domain.MaxEventPageSize + 1,
+	})
+	if !errors.Is(err, ErrInvalidQuery) {
+		t.Fatalf("oversized EventsByAddress() error = %v, want ErrInvalidQuery", err)
+	}
 }
 
 func newPostgresIntegrationStore(t *testing.T) *Postgres {

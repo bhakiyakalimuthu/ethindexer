@@ -15,6 +15,9 @@ import (
 )
 
 const (
+	canonicalBatchQueryLimit      = 1_000
+	canonicalWriterAdvisoryLockID = int64(0x455448494e4458) // "ETHINDX"
+
 	canonicalTipQuery = `
 		SELECT number, hash
 		FROM blocks
@@ -79,8 +82,7 @@ const (
 )
 
 var (
-	_ IndexStore  = (*Postgres)(nil)
-	_ HealthStore = (*Postgres)(nil)
+	_ Store = (*Postgres)(nil)
 )
 
 func (p *Postgres) CanonicalTip(ctx context.Context) (*domain.ChainTip, error) {
@@ -137,10 +139,11 @@ func (p *Postgres) ApplyCanonicalUpdate(ctx context.Context, update domain.Canon
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// The indexer has one canonical writer. This lock also serializes the first
-	// update, when sync_state does not contain a row yet.
-	if _, err := tx.Exec(ctx, `LOCK TABLE sync_state IN EXCLUSIVE MODE`); err != nil {
-		return fmt.Errorf("lock canonical sync state: %w", err)
+	// The schema stores one global canonical chain. A transaction-scoped
+	// advisory lock serializes cooperating indexer instances without locking a
+	// table and also covers the first update, before sync_state has a row.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, canonicalWriterAdvisoryLockID); err != nil {
+		return fmt.Errorf("acquire canonical writer lock: %w", err)
 	}
 	if err := rejectDifferentChain(ctx, tx, update.ChainID); err != nil {
 		return err
@@ -238,14 +241,38 @@ func insertCanonicalBundles(ctx context.Context, tx pgx.Tx, bundles []domain.Blo
 	batch := &pgx.Batch{}
 	for _, bundle := range bundles {
 		queueBlock(batch, bundle.Block)
+		if batch.Len() >= canonicalBatchQueryLimit {
+			if err := sendCanonicalBatch(ctx, tx, batch); err != nil {
+				return err
+			}
+			batch = &pgx.Batch{}
+		}
 		for _, transaction := range bundle.Transactions {
 			queueTransaction(batch, transaction)
+			if batch.Len() >= canonicalBatchQueryLimit {
+				if err := sendCanonicalBatch(ctx, tx, batch); err != nil {
+					return err
+				}
+				batch = &pgx.Batch{}
+			}
 		}
 		for _, event := range bundle.Events {
 			queueEvent(batch, event)
+			if batch.Len() >= canonicalBatchQueryLimit {
+				if err := sendCanonicalBatch(ctx, tx, batch); err != nil {
+					return err
+				}
+				batch = &pgx.Batch{}
+			}
 		}
 	}
+	return sendCanonicalBatch(ctx, tx, batch)
+}
 
+func sendCanonicalBatch(ctx context.Context, tx pgx.Tx, batch *pgx.Batch) error {
+	if batch.Len() == 0 {
+		return nil
+	}
 	results := tx.SendBatch(ctx, batch)
 	if err := results.Close(); err != nil {
 		return fmt.Errorf("insert canonical bundles: %w", err)
