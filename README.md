@@ -48,11 +48,20 @@ DATABASE_URL
 
 `CONFIG_FILE` changes the default path. The `-config` flag takes precedence.
 
-The executable currently validates configuration, connects to Ethereum RPC,
-verifies the chain ID, concurrently fetches the configured recent block window,
-and stores it in PostgreSQL. It then polls continuously, fetching only canonical
-changes and retrying transient failures with bounded exponential backoff. Apply
-the SQL migrations before startup. HTTP runtime wiring remains a later step.
+The executable validates configuration, connects to Ethereum RPC, verifies the
+chain ID, concurrently fetches the configured recent block window, and stores it
+in PostgreSQL. It polls continuously, fetching only canonical changes and
+retrying transient failures with bounded exponential backoff. The HTTP server
+runs alongside synchronization and shuts down gracefully on SIGINT or SIGTERM.
+Apply the SQL migrations before startup.
+
+The V1 read API exposes:
+
+```text
+GET /v1/blocks/{number}
+GET /v1/transactions/{hash}
+GET /v1/addresses/{address}/events?limit=100&cursor={opaque_cursor}
+```
 
 ## Live RPC verification
 

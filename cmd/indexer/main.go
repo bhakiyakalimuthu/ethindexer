@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	stdlog "log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -14,6 +16,8 @@ import (
 	"ethindexer/internal/config"
 	"ethindexer/internal/ethereum"
 	"ethindexer/internal/indexer"
+	"ethindexer/internal/server"
+	"ethindexer/internal/service"
 	"ethindexer/internal/store"
 
 	"github.com/rs/zerolog"
@@ -92,11 +96,24 @@ func run(ctx context.Context, args []string) error {
 		RetryMinBackoff: cfg.Indexer.RetryMinBackoff.Duration,
 		RetryMaxBackoff: cfg.Indexer.RetryMaxBackoff.Duration,
 	}, logger)
-	err = syncer.Run(ctx)
-	if errors.Is(err, context.Canceled) {
-		err = nil
+
+	queries := service.NewQueryService(postgresStore)
+	handler := server.NewServer(server.Server{
+		QueryService:   queries,
+		Logger:         logger,
+		RequestTimeout: cfg.HTTP.RequestTimeout.Duration,
+	})
+	httpLogger := logger.With().Str("component", "http_server").Logger()
+	httpServer := &http.Server{
+		Addr:              cfg.HTTP.Address,
+		Handler:           handler,
+		ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout.Duration,
+		IdleTimeout:       cfg.HTTP.IdleTimeout.Duration,
+		ErrorLog:          stdlog.New(httpLogger, "", 0),
 	}
-	return err
+
+	logger.Info().Str("address", cfg.HTTP.Address).Msg("starting HTTP server")
+	return runServices(ctx, syncer, httpServer, cfg.HTTP.ShutdownTimeout.Duration)
 }
 
 func configPathFromEnvironment() string {
