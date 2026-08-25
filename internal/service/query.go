@@ -9,6 +9,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+type Queries interface {
+	Block(ctx context.Context, number uint64) (domain.BlockResult, error)
+	Transaction(ctx context.Context, hash common.Hash) (domain.TransactionResult, error)
+	Events(ctx context.Context, query domain.EventQuery) (domain.EventPage, error)
+}
+
 type QueryService struct {
 	store store.QueryStore
 }
