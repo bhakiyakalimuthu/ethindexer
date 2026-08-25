@@ -9,13 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
-)
+	"ethindexer/internal/domain"
 
-const (
-	HeadLatest    = "latest"
-	HeadSafe      = "safe"
-	HeadFinalized = "finalized"
+	"gopkg.in/yaml.v3"
 )
 
 // Duration keeps human-readable values such as "5s" in YAML while exposing
@@ -71,12 +67,12 @@ type Ethereum struct {
 }
 
 type Indexer struct {
-	PollInterval    Duration `yaml:"poll_interval"`
-	BlockWindow     uint64   `yaml:"block_window"`
-	HeadMode        string   `yaml:"head_mode"`
-	RetryAttempts   int      `yaml:"retry_attempts"`
-	RetryMinBackoff Duration `yaml:"retry_min_backoff"`
-	RetryMaxBackoff Duration `yaml:"retry_max_backoff"`
+	PollInterval    Duration        `yaml:"poll_interval"`
+	BlockWindow     uint64          `yaml:"block_window"`
+	HeadMode        domain.HeadMode `yaml:"head_mode"`
+	RetryAttempts   int             `yaml:"retry_attempts"`
+	RetryMinBackoff Duration        `yaml:"retry_min_backoff"`
+	RetryMaxBackoff Duration        `yaml:"retry_max_backoff"`
 }
 
 type Database struct {
@@ -107,7 +103,7 @@ func Default() Config {
 		Indexer: Indexer{
 			PollInterval:    Duration{Duration: 4 * time.Second},
 			BlockWindow:     50,
-			HeadMode:        HeadLatest,
+			HeadMode:        domain.HeadLatest,
 			RetryAttempts:   3,
 			RetryMinBackoff: Duration{Duration: 250 * time.Millisecond},
 			RetryMaxBackoff: Duration{Duration: 5 * time.Second},
@@ -198,7 +194,7 @@ func (cfg Config) Validate() error {
 		problems = append(problems, errors.New("indexer.block_window must be greater than zero"))
 	}
 	switch cfg.Indexer.HeadMode {
-	case HeadLatest, HeadSafe, HeadFinalized:
+	case domain.HeadLatest, domain.HeadSafe, domain.HeadFinalized:
 	default:
 		problems = append(problems, errors.New("indexer.head_mode must be latest, safe, or finalized"))
 	}

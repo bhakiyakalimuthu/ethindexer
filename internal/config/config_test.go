@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"ethindexer/internal/domain"
 )
 
 func TestLoadAppliesDefaultsAndEnvironmentOverrides(t *testing.T) {
@@ -16,6 +18,8 @@ func TestLoadAppliesDefaultsAndEnvironmentOverrides(t *testing.T) {
 	path := writeConfig(t, `
 ethereum:
   rpc_url: http://localhost:8545
+indexer:
+  head_mode: safe
 database:
   url: postgres://local:local@localhost:5432/indexer
 `)
@@ -36,6 +40,9 @@ database:
 	}
 	if cfg.Indexer.BlockWindow != 50 {
 		t.Fatalf("block window = %d", cfg.Indexer.BlockWindow)
+	}
+	if cfg.Indexer.HeadMode != domain.HeadSafe {
+		t.Fatalf("head mode = %q", cfg.Indexer.HeadMode)
 	}
 	if cfg.HTTP.RequestTimeout.Duration != 5*time.Second {
 		t.Fatalf("request timeout = %s", cfg.HTTP.RequestTimeout.Duration)

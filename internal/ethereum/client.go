@@ -2,7 +2,6 @@ package ethereum
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -11,8 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
-
-var ErrUnexpectedChainID = errors.New("ethereum: unexpected chain ID")
 
 // Reader is the narrow subset of ethclient used by the polling indexer. Its
 // shape makes the synchronizer testable without a live Ethereum endpoint.

@@ -2,17 +2,11 @@ package indexer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"sync"
 
 	"ethindexer/internal/domain"
-)
-
-var (
-	ErrInvalidLowFetchRange   = errors.New("indexer: invalid low fetch range")
-	ErrInvalidLargeFetchRange = errors.New("indexer: invalid large fetch range")
 )
 
 type fetchJob struct {

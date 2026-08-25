@@ -2,7 +2,6 @@ package indexer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
 	"sort"
@@ -14,8 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
-
-var ErrInconsistentBlockData = errors.New("indexer: inconsistent block data")
 
 // Fetcher reads and validates one complete block bundle. Fetching a block
 // includes all transactions, so only one additional block-hash-filtered RPC

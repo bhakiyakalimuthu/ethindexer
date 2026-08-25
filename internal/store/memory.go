@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
 	"sort"
@@ -12,11 +11,6 @@ import (
 	"ethindexer/internal/domain"
 
 	"github.com/ethereum/go-ethereum/common"
-)
-
-var (
-	ErrInvalidCanonicalUpdate = errors.New("store: invalid canonical update")
-	ErrStaleCursor            = errors.New("store: stale event cursor")
 )
 
 // Memory is a thread-safe Store implementation intended for tests and local

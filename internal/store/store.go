@@ -2,14 +2,11 @@ package store
 
 import (
 	"context"
-	"errors"
 
 	"ethindexer/internal/domain"
 
 	"github.com/ethereum/go-ethereum/common"
 )
-
-var ErrNotFound = errors.New("store: not found")
 
 // QueryStore is the read contract required by the API service.
 type QueryStore interface {

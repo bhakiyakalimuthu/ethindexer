@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"ethindexer/internal/config"
-	"ethindexer/internal/domain"
 	"ethindexer/internal/ethereum"
 	"ethindexer/internal/indexer"
 	"ethindexer/internal/store"
@@ -69,53 +68,35 @@ func run(ctx context.Context, args []string) error {
 	memoryStore := store.NewMemory()
 	defer memoryStore.Close()
 
-	block, eventCount, err := verifyLatestBlock(ctx, ethClient, memoryStore, cfg.Ethereum.ChainID)
+	fetcher := indexer.NewFetcher(ethClient, cfg.Ethereum.ChainID)
+	syncer := indexer.NewSyncer(fetcher, ethClient, memoryStore, indexer.Config{
+		ChainID:         cfg.Ethereum.ChainID,
+		PollInterval:    cfg.Indexer.PollInterval.Duration,
+		BlockWindow:     cfg.Indexer.BlockWindow,
+		HeadMode:        cfg.Indexer.HeadMode,
+		RPCTimeout:      cfg.Ethereum.RPCTimeout.Duration,
+		RPCConcurrency:  cfg.Ethereum.RPCConcurrency,
+		RetryAttempts:   cfg.Indexer.RetryAttempts,
+		RetryMinBackoff: cfg.Indexer.RetryMinBackoff.Duration,
+		RetryMaxBackoff: cfg.Indexer.RetryMaxBackoff.Duration,
+	}, logger)
+	result, err := syncer.SyncOnce(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("synchronize Ethereum window: %w", err)
 	}
 
 	logger.Info().
 		Str("environment", cfg.App.Environment).
 		Uint64("chain_id", cfg.Ethereum.ChainID).
-		Uint64("block_number", block.Block.Number).
-		Str("block_hash", block.Block.Hash.Hex()).
-		Int("transactions", len(block.TransactionHashes)).
-		Int("events", eventCount).
-		Msg("latest Ethereum block fetched and verified in memory")
+		Uint64("from_block", result.FromBlock).
+		Uint64("to_block", result.Head.Number).
+		Str("head_hash", result.Head.Hash.Hex()).
+		Int("blocks", result.BlockCount).
+		Int("transactions", result.TransactionCount).
+		Int("events", result.EventCount).
+		Msg("Ethereum block window synchronized in memory")
 
 	return nil
-}
-
-func verifyLatestBlock(
-	ctx context.Context,
-	chain ethereum.Reader,
-	memoryStore store.Store,
-	chainID uint64,
-) (domain.BlockResult, int, error) {
-	blockNumber, err := chain.BlockNumber(ctx)
-	if err != nil {
-		return domain.BlockResult{}, 0, fmt.Errorf("read latest block number: %w", err)
-	}
-
-	bundle, err := indexer.NewFetcher(chain, chainID).FetchBlock(ctx, blockNumber)
-	if err != nil {
-		return domain.BlockResult{}, 0, fmt.Errorf("fetch latest block bundle: %w", err)
-	}
-	if err := memoryStore.ApplyCanonicalUpdate(ctx, domain.CanonicalUpdate{
-		ChainID:     chainID,
-		ReplaceFrom: blockNumber,
-		RetainFrom:  blockNumber,
-		Blocks:      []domain.BlockBundle{bundle},
-		SyncedAt:    bundle.Block.IndexedAt,
-	}); err != nil {
-		return domain.BlockResult{}, 0, fmt.Errorf("store latest block bundle: %w", err)
-	}
-
-	storedBlock, err := memoryStore.BlockByNumber(ctx, blockNumber)
-	if err != nil {
-		return domain.BlockResult{}, 0, fmt.Errorf("read stored block %d: %w", blockNumber, err)
-	}
-	return storedBlock, len(bundle.Events), nil
 }
 
 func configPathFromEnvironment() string {
