@@ -17,13 +17,13 @@ type Server struct {
 	RequestTimeout time.Duration
 }
 
-// NewServer contains only routing and HTTP middleware. Business endpoints are
-// added here when their handlers are implemented.
+// NewServer contains only routing, handlers, and HTTP middleware.
 func NewServer(dependencies Server) http.Handler {
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.Timeout(dependencies.RequestTimeout))
+	router.Get("/v1/blocks/{number}", dependencies.blockByNumber)
 
 	return router
 }

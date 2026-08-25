@@ -24,13 +24,16 @@ func NewQueryService(queryStore store.QueryStore) *QueryService {
 }
 
 func (s *QueryService) Block(ctx context.Context, number uint64) (domain.BlockResult, error) {
-	return s.store.BlockByNumber(ctx, number)
+	result, err := s.store.BlockByNumber(ctx, number)
+	return result, translateStoreError(err)
 }
 
 func (s *QueryService) Transaction(ctx context.Context, hash common.Hash) (domain.TransactionResult, error) {
-	return s.store.TransactionByHash(ctx, hash)
+	result, err := s.store.TransactionByHash(ctx, hash)
+	return result, translateStoreError(err)
 }
 
 func (s *QueryService) Events(ctx context.Context, query domain.EventQuery) (domain.EventPage, error) {
-	return s.store.EventsByAddress(ctx, query)
+	result, err := s.store.EventsByAddress(ctx, query)
+	return result, translateStoreError(err)
 }
