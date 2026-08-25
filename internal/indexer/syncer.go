@@ -37,6 +37,7 @@ type Syncer struct {
 	config  Config
 	logger  zerolog.Logger
 	now     func() time.Time
+	wait    func(context.Context, time.Duration) error
 }
 
 func NewSyncer(fetcher *Fetcher, chain ethereum.Reader, indexStore store.IndexStore, config Config, logger zerolog.Logger) *Syncer {
@@ -47,6 +48,7 @@ func NewSyncer(fetcher *Fetcher, chain ethereum.Reader, indexStore store.IndexSt
 		config:  config,
 		logger:  logger,
 		now:     time.Now,
+		wait:    waitFor,
 	}
 }
 

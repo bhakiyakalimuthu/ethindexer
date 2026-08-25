@@ -9,4 +9,5 @@ var (
 	ErrInvalidSyncConfig      = errors.New("indexer: invalid sync config")
 	ErrInvalidSyncDependency  = errors.New("indexer: invalid sync dependency")
 	ErrHeadChanged            = errors.New("indexer: selected head changed during sync")
+	ErrSyncRetriesExhausted   = errors.New("indexer: sync retries exhausted")
 )

@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"ethindexer/internal/config"
 	"ethindexer/internal/ethereum"
@@ -23,7 +25,10 @@ const (
 )
 
 func main() {
-	if err := run(context.Background(), os.Args[1:]); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx, os.Args[1:]); err != nil {
 		log.Fatal().Err(err).Msg("eth-indexer failed to start")
 	}
 }
@@ -80,24 +85,11 @@ func run(ctx context.Context, args []string) error {
 		RetryMinBackoff: cfg.Indexer.RetryMinBackoff.Duration,
 		RetryMaxBackoff: cfg.Indexer.RetryMaxBackoff.Duration,
 	}, logger)
-	result, err := syncer.SyncOnce(ctx)
-	if err != nil {
-		return fmt.Errorf("synchronize Ethereum window: %w", err)
+	err = syncer.Run(ctx)
+	if errors.Is(err, context.Canceled) {
+		err = nil
 	}
-
-	logger.Info().
-		Str("environment", cfg.App.Environment).
-		Uint64("chain_id", cfg.Ethereum.ChainID).
-		Uint64("from_block", result.FromBlock).
-		Uint64("replace_from", result.ReplaceFrom).
-		Uint64("to_block", result.Head.Number).
-		Str("head_hash", result.Head.Hash.Hex()).
-		Int("blocks", result.BlockCount).
-		Int("transactions", result.TransactionCount).
-		Int("events", result.EventCount).
-		Msg("Ethereum block window synchronized in memory")
-
-	return nil
+	return err
 }
 
 func configPathFromEnvironment() string {

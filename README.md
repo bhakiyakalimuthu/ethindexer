@@ -47,9 +47,9 @@ DATABASE_URL
 
 The executable currently validates configuration, connects to Ethereum RPC,
 verifies the chain ID, concurrently fetches the configured recent block window,
-stores it in memory, and reads the latest block back for a one-shot verification.
-PostgreSQL, polling, and HTTP runtime wiring are intentionally left for later
-steps.
+and stores it in memory. It then polls continuously, fetching only canonical
+changes and retrying transient failures with bounded exponential backoff.
+PostgreSQL and HTTP runtime wiring are intentionally left for later steps.
 
 ## Live RPC verification
 
@@ -61,9 +61,11 @@ go run ./cmd/indexer -config configs/config.example.yaml
 ```
 
 The command fetches `indexer.block_window` blocks with at most
-`ethereum.rpc_concurrency` concurrent block operations. It prints the range,
-latest hash, and aggregate transaction and event counts. It does not print the
-RPC URL or retain data after exit.
+`ethereum.rpc_concurrency` concurrent block operations. It logs the range,
+latest hash, and aggregate transaction and event counts, then waits for the
+configured `indexer.poll_interval`. Stop it with Ctrl-C; SIGINT and SIGTERM
+cancel active RPC work and retry waits before resources are closed. It does not
+print the RPC URL or retain data after exit.
 
 Repeated synchronization cycles reuse the stored canonical tip. An unchanged
 head performs no block fetches, a canonical extension fetches only new blocks,
