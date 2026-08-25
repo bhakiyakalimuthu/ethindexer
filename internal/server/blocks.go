@@ -76,11 +76,6 @@ func newBlockResponse(result domain.BlockResult) blockResponse {
 		transactionHashes[index] = hash.Hex()
 	}
 
-	var baseFee *string
-	if result.Block.BaseFeePerGas != nil {
-		value := result.Block.BaseFeePerGas.String()
-		baseFee = &value
-	}
 	return blockResponse{
 		Number:            result.Block.Number,
 		Hash:              result.Block.Hash.Hex(),
@@ -88,7 +83,7 @@ func newBlockResponse(result domain.BlockResult) blockResponse {
 		Timestamp:         result.Block.Timestamp,
 		GasLimit:          result.Block.GasLimit,
 		GasUsed:           result.Block.GasUsed,
-		BaseFeePerGasWei:  baseFee,
+		BaseFeePerGasWei:  optionalBigIntString(result.Block.BaseFeePerGas),
 		TransactionCount:  result.Block.TransactionCount,
 		TransactionHashes: transactionHashes,
 		IndexedAt:         result.Block.IndexedAt.UTC(),

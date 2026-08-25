@@ -24,6 +24,7 @@ func NewServer(dependencies Server) http.Handler {
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.Timeout(dependencies.RequestTimeout))
 	router.Get("/v1/blocks/{number}", dependencies.blockByNumber)
+	router.Get("/v1/transactions/{hash}", dependencies.transactionByHash)
 
 	return router
 }

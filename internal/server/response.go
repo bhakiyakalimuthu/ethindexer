@@ -2,8 +2,10 @@ package server
 
 import (
 	"encoding/json"
+	"math/big"
 	"net/http"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
@@ -34,4 +36,20 @@ func (s Server) writeError(writer http.ResponseWriter, request *http.Request, st
 		Message:   message,
 		RequestID: middleware.GetReqID(request.Context()),
 	}})
+}
+
+func optionalBigIntString(value *big.Int) *string {
+	if value == nil {
+		return nil
+	}
+	encoded := value.String()
+	return &encoded
+}
+
+func optionalAddressString(address *common.Address) *string {
+	if address == nil {
+		return nil
+	}
+	encoded := address.Hex()
+	return &encoded
 }

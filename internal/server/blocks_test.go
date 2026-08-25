@@ -160,15 +160,22 @@ func decodeErrorResponse(t *testing.T, response *httptest.ResponseRecorder) erro
 }
 
 type queryServiceStub struct {
-	block func(context.Context, uint64) (domain.BlockResult, error)
+	block       func(context.Context, uint64) (domain.BlockResult, error)
+	transaction func(context.Context, common.Hash) (domain.TransactionResult, error)
 }
 
 func (stub *queryServiceStub) Block(ctx context.Context, number uint64) (domain.BlockResult, error) {
+	if stub.block == nil {
+		return domain.BlockResult{}, errors.New("unexpected Block call")
+	}
 	return stub.block(ctx, number)
 }
 
-func (stub *queryServiceStub) Transaction(context.Context, common.Hash) (domain.TransactionResult, error) {
-	return domain.TransactionResult{}, errors.New("unexpected Transaction call")
+func (stub *queryServiceStub) Transaction(ctx context.Context, hash common.Hash) (domain.TransactionResult, error) {
+	if stub.transaction == nil {
+		return domain.TransactionResult{}, errors.New("unexpected Transaction call")
+	}
+	return stub.transaction(ctx, hash)
 }
 
 func (stub *queryServiceStub) Events(context.Context, domain.EventQuery) (domain.EventPage, error) {
