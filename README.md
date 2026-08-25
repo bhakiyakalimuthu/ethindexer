@@ -46,5 +46,19 @@ DATABASE_URL
 
 `CONFIG_FILE` changes the default path. The `-config` flag takes precedence.
 
-The executable currently validates configuration and logging only. RPC, store,
-indexer, and HTTP runtime wiring are intentionally left for the next step.
+The executable currently validates configuration, constructs logging, connects
+to Ethereum RPC, and verifies the configured chain ID. Store, indexer, and HTTP
+runtime wiring are intentionally left for later steps.
+
+## Development checks
+
+```text
+make test
+make vet
+make lint
+make check
+```
+
+The initial lint target checks Go formatting and verifies that `go.mod` and
+`go.sum` are tidy without introducing an external linter dependency. It can be
+extended with golangci-lint when more development tooling is added.
