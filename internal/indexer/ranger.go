@@ -3,10 +3,11 @@ package indexer
 import (
 	"context"
 	"errors"
-	"ethindexer/internal/domain"
 	"fmt"
 	"math"
 	"sync"
+
+	"ethindexer/internal/domain"
 )
 
 var (
@@ -20,14 +21,15 @@ type fetchJob struct {
 }
 
 func (f *Fetcher) FetchRange(ctx context.Context, from uint64, to uint64, concurrency int) ([]domain.BlockBundle, error) {
+	if from > to {
+		return nil, fmt.Errorf("%w: from block %d exceeds to block %d", ErrInvalidLowFetchRange, from, to)
+	}
+
 	blockRange := to - from
-	if blockRange > uint64(math.MaxInt) {
-		return nil, fmt.Errorf("%w block range is too large", ErrInvalidLargeFetchRange)
+	if blockRange >= uint64(math.MaxInt) {
+		return nil, fmt.Errorf("%w: block range is too large", ErrInvalidLargeFetchRange)
 	}
-	blockCount := int(blockRange + 1)
-	if blockCount <= 0 {
-		return nil, ErrInvalidLowFetchRange
-	}
+	blockCount := int(blockRange) + 1
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -37,10 +39,10 @@ func (f *Fetcher) FetchRange(ctx context.Context, from uint64, to uint64, concur
 	}
 
 	bundles := make([]domain.BlockBundle, blockCount)
-	jobs := make(chan fetchJob, blockCount)
+	jobs := make(chan fetchJob)
 	errCh := make(chan error, 1)
 
-	ctx, cancel := context.WithCancel(ctx)
+	workerCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	var (
@@ -51,29 +53,40 @@ func (f *Fetcher) FetchRange(ctx context.Context, from uint64, to uint64, concur
 	pWg.Add(1)
 	go func() {
 		defer pWg.Done()
+		defer close(jobs)
 		for i := 0; i < blockCount; i++ {
 			job := fetchJob{index: i, blockNumber: from + uint64(i)}
 			select {
 			case jobs <- job:
-			case <-ctx.Done():
+			case <-workerCtx.Done():
 				return
 			}
 		}
-		close(jobs)
 	}()
 
 	for i := 0; i < concurrency; i++ {
 		cWg.Add(1)
 		go func() {
 			defer cWg.Done()
-			for job := range jobs {
-				block, err := f.FetchBlock(ctx, job.blockNumber)
+			for {
+				var job fetchJob
+				var open bool
+				select {
+				case <-workerCtx.Done():
+					return
+				case job, open = <-jobs:
+					if !open {
+						return
+					}
+				}
+
+				block, err := f.FetchBlock(workerCtx, job.blockNumber)
 				if err != nil {
 					select {
-					case errCh <- fmt.Errorf("failed to fetch block : %d, %w", job.blockNumber, err):
-						cancel() // cancel context to notify other workers
+					case errCh <- fmt.Errorf("failed to fetch block %d: %w", job.blockNumber, err):
 					default:
 					}
+					cancel()
 					return
 				}
 				bundles[job.index] = block
@@ -82,8 +95,12 @@ func (f *Fetcher) FetchRange(ctx context.Context, from uint64, to uint64, concur
 	}
 	pWg.Wait()
 	cWg.Wait()
-	close(errCh)
-	if err := <-errCh; err != nil {
+	select {
+	case err := <-errCh:
+		return nil, err
+	default:
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -101,7 +118,6 @@ func validateFetchedBundles(bundles []domain.BlockBundle, from uint64) error {
 		}
 		if i > 0 && bundle.Block.ParentHash != bundles[i-1].Block.Hash {
 			return fmt.Errorf("%w: block %d parent %s does not match block %d hash %s", ErrInconsistentBlockData, bundle.Block.Number, bundle.Block.ParentHash, bundles[i-1].Block.Number, bundles[i-1].Block.Hash)
-
 		}
 	}
 	return nil
