@@ -12,7 +12,7 @@ import (
 
 func TestLoadAppliesDefaultsAndEnvironmentOverrides(t *testing.T) {
 	t.Setenv("ETH_RPC_URL", "https://mainnet.example.invalid")
-	t.Setenv("DATABASE_URL", "postgres://override:secret@db:5432/indexer")
+	t.Setenv("DATABASE_URL", "postgres://override-db:5432/indexer")
 	t.Setenv("LOG_LEVEL", "debug")
 
 	path := writeConfig(t, `
@@ -21,7 +21,7 @@ ethereum:
 indexer:
   head_mode: safe
 database:
-  url: postgres://local:local@localhost:5432/indexer
+  url: postgres://local-db:5432/indexer
 `)
 
 	cfg, err := Load(path)
@@ -32,7 +32,7 @@ database:
 	if cfg.Ethereum.RPCURL != "https://mainnet.example.invalid" {
 		t.Fatalf("RPC URL = %q", cfg.Ethereum.RPCURL)
 	}
-	if cfg.Database.URL != "postgres://override:secret@db:5432/indexer" {
+	if cfg.Database.URL != "postgres://override-db:5432/indexer" {
 		t.Fatalf("database URL = %q", cfg.Database.URL)
 	}
 	if cfg.App.LogLevel != "debug" {
@@ -55,7 +55,7 @@ ethereum:
   rpc_url: http://localhost:8545
   rpc_concurency: 8
 database:
-  url: postgres://local:local@localhost:5432/indexer
+  url: postgres://local-db:5432/indexer
 `)
 
 	_, err := Load(path)
@@ -68,7 +68,7 @@ func TestValidateRejectsNonMainnetConfiguration(t *testing.T) {
 	cfg := Default()
 	cfg.Ethereum.RPCURL = "https://mainnet.example.invalid"
 	cfg.Ethereum.ChainID = 11155111
-	cfg.Database.URL = "postgres://indexer:secret@db:5432/indexer"
+	cfg.Database.URL = "postgres://db:5432/indexer"
 
 	err := cfg.Validate()
 	if err == nil || !strings.Contains(err.Error(), "chain_id must be 1") {

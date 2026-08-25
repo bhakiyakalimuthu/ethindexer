@@ -68,12 +68,18 @@ RPC URL or retain data after exit.
 ## Development checks
 
 ```text
+make lint-install
 make test
 make vet
 make lint
+make lint-fix
+make fmt
 make check
 ```
 
-The initial lint target checks Go formatting and verifies that `go.mod` and
-`go.sum` are tidy without introducing an external linter dependency. It can be
-extended with golangci-lint when more development tooling is added.
+`make lint-install` installs the pinned golangci-lint release into the ignored
+`bin/` directory. `make lint` verifies the linter configuration, checks that
+`go.mod` and `go.sum` are tidy, and runs the configured correctness, security,
+resource-lifecycle, logging, and formatting checks. `make lint-fix` applies
+supported fixes, while `make fmt` applies the configured gofmt and goimports
+formatters.

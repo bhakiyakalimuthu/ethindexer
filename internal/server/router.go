@@ -4,10 +4,11 @@ import (
 	"net/http"
 	"time"
 
-	"ethindexer/internal/service"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog"
+
+	"ethindexer/internal/service"
 )
 
 type Server struct {

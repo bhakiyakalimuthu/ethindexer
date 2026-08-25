@@ -1,8 +1,11 @@
 GO ?= go
 PACKAGES ?= ./...
-GO_FILES := $(filter-out $(shell git ls-files --deleted '*.go'),$(shell git ls-files --cached --others --exclude-standard '*.go'))
+TOOLS_BIN ?= $(CURDIR)/bin
+GOLANGCI_LINT_VERSION ?= v2.12.2
+GOLANGCI_LINT_VERSION_NUMBER := $(patsubst v%,%,$(GOLANGCI_LINT_VERSION))
+GOLANGCI_LINT ?= $(TOOLS_BIN)/golangci-lint
 
-.PHONY: test vet lint check fmt
+.PHONY: test vet lint lint-config lint-fix lint-install lint-tool check fmt
 
 test:
 	$(GO) test $(PACKAGES)
@@ -10,18 +13,35 @@ test:
 vet:
 	$(GO) vet $(PACKAGES)
 
-# Dependency-free lint baseline. This can be replaced or extended with
-# golangci-lint when the repository adds development tooling.
-lint:
-	@unformatted="$$(gofmt -l $(GO_FILES))"; \
-	if [ -n "$$unformatted" ]; then \
-		echo "Go files need formatting:"; \
-		echo "$$unformatted"; \
+lint-tool:
+	@if [ ! -x "$(GOLANGCI_LINT)" ]; then \
+		echo "golangci-lint is not installed; run 'make lint-install'"; \
 		exit 1; \
 	fi
-	$(GO) mod tidy -diff
+	@"$(GOLANGCI_LINT)" version | grep -q "version $(GOLANGCI_LINT_VERSION_NUMBER)" || { \
+		echo "golangci-lint $(GOLANGCI_LINT_VERSION) is required; run 'make lint-install'"; \
+		exit 1; \
+	}
 
-fmt:
-	gofmt -w $(GO_FILES)
+lint-install:
+	@mkdir -p "$(TOOLS_BIN)"
+	@if [ -x "$(GOLANGCI_LINT)" ] && "$(GOLANGCI_LINT)" version | grep -q "version $(GOLANGCI_LINT_VERSION_NUMBER)"; then \
+		echo "golangci-lint $(GOLANGCI_LINT_VERSION) is already installed"; \
+	else \
+		curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$(TOOLS_BIN)" "$(GOLANGCI_LINT_VERSION)"; \
+	fi
+
+lint-config: lint-tool
+	"$(GOLANGCI_LINT)" config verify
+
+lint: lint-config
+	$(GO) mod tidy -diff
+	"$(GOLANGCI_LINT)" run $(PACKAGES)
+
+lint-fix: lint-config
+	"$(GOLANGCI_LINT)" run --fix $(PACKAGES)
+
+fmt: lint-tool
+	"$(GOLANGCI_LINT)" fmt
 
 check: lint vet test
