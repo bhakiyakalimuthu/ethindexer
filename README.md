@@ -46,9 +46,10 @@ DATABASE_URL
 `CONFIG_FILE` changes the default path. The `-config` flag takes precedence.
 
 The executable currently validates configuration, connects to Ethereum RPC,
-verifies the chain ID, fetches the latest block bundle, stores it in memory, and
-reads the block back for a one-shot verification. PostgreSQL, polling, and HTTP
-runtime wiring are intentionally left for later steps.
+verifies the chain ID, concurrently fetches the configured recent block window,
+stores it in memory, and reads the latest block back for a one-shot verification.
+PostgreSQL, polling, and HTTP runtime wiring are intentionally left for later
+steps.
 
 ## Live RPC verification
 
@@ -59,8 +60,10 @@ export ETH_RPC_URL="https://your-mainnet-provider.example"
 go run ./cmd/indexer -config configs/config.example.yaml
 ```
 
-The command prints the fetched block number and hash together with transaction
-and event counts. It does not print the RPC URL or retain data after exit.
+The command fetches `indexer.block_window` blocks with at most
+`ethereum.rpc_concurrency` concurrent block operations. It prints the range,
+latest hash, and aggregate transaction and event counts. It does not print the
+RPC URL or retain data after exit.
 
 ## Development checks
 

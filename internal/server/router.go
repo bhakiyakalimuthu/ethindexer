@@ -10,8 +10,6 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Queries is owned by the server package and implemented by service.QueryService.
-
 type Server struct {
 	QueryService   service.Queries
 	Logger         zerolog.Logger

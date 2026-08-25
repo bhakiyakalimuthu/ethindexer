@@ -30,7 +30,7 @@ func TestRunRejectsUnexpectedArguments(t *testing.T) {
 	}
 }
 
-func TestVerifyLatestBlockFetchesStoresAndReadsBack(t *testing.T) {
+func TestVerifyRecentBlocksFetchesStoresAndReadsBack(t *testing.T) {
 	const blockNumber = uint64(123)
 	block := types.NewBlockWithHeader(&types.Header{
 		Number:     new(big.Int).SetUint64(blockNumber),
@@ -39,18 +39,25 @@ func TestVerifyLatestBlockFetchesStoresAndReadsBack(t *testing.T) {
 	chain := &verificationChain{block: block}
 	memory := store.NewMemory()
 
-	stored, eventCount, err := verifyLatestBlock(context.Background(), chain, memory, 1)
+	verification, err := verifyRecentBlocks(context.Background(), chain, memory, 1, 1, 1)
 	if err != nil {
-		t.Fatalf("verifyLatestBlock() error = %v", err)
+		t.Fatalf("verifyRecentBlocks() error = %v", err)
 	}
-	if stored.Block.Number != blockNumber || stored.Block.Hash != block.Hash() {
-		t.Fatalf("stored block = %#v", stored.Block)
+	if verification.Latest.Block.Number != blockNumber || verification.Latest.Block.Hash != block.Hash() {
+		t.Fatalf("stored block = %#v", verification.Latest.Block)
 	}
-	if eventCount != 0 {
-		t.Fatalf("event count = %d, want zero", eventCount)
+	if verification.BlockCount != 1 || verification.TransactionCount != 0 || verification.EventCount != 0 {
+		t.Fatalf("verification summary = %#v", verification)
 	}
 	if chain.blockCalls != 1 || chain.logCalls != 1 {
 		t.Fatalf("RPC calls: blocks=%d logs=%d", chain.blockCalls, chain.logCalls)
+	}
+}
+
+func TestVerifyRecentBlocksRejectsEmptyWindow(t *testing.T) {
+	_, err := verifyRecentBlocks(context.Background(), &verificationChain{}, store.NewMemory(), 1, 0, 1)
+	if err == nil || !strings.Contains(err.Error(), "block window") {
+		t.Fatalf("verifyRecentBlocks() error = %v, want block window error", err)
 	}
 }
 

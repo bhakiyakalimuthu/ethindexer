@@ -16,12 +16,16 @@ import (
 	"ethindexer/internal/store"
 
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+)
+
+const (
+	APP_NAME = "eth-indexer"
 )
 
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "eth-indexer: %v\n", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Msg("eth-indexer failed to start")
 	}
 }
 
