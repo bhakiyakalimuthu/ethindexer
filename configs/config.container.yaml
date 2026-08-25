@@ -1,0 +1,32 @@
+app:
+  environment: production
+  log_level: info
+
+http:
+  address: ":8080"
+  request_timeout: 5s
+  read_header_timeout: 5s
+  idle_timeout: 60s
+  shutdown_timeout: 15s
+
+ethereum:
+  # ETH_RPC_URL must override this non-secret placeholder.
+  rpc_url: "https://ethereum-rpc.invalid"
+  chain_id: 1
+  rpc_timeout: 10s
+  rpc_concurrency: 8
+
+indexer:
+  poll_interval: 4s
+  block_window: 50
+  head_mode: latest
+  retry_attempts: 3
+  retry_min_backoff: 250ms
+  retry_max_backoff: 5s
+
+database:
+  # DATABASE_URL overrides this value in Compose and production.
+  url: "postgres://indexer:indexer@postgres:5432/indexer?sslmode=disable"
+  max_connections: 12
+  min_connections: 2
+  connect_timeout: 10s

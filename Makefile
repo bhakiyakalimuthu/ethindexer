@@ -4,8 +4,11 @@ TOOLS_BIN ?= $(CURDIR)/bin
 GOLANGCI_LINT_VERSION ?= v2.12.2
 GOLANGCI_LINT_VERSION_NUMBER := $(patsubst v%,%,$(GOLANGCI_LINT_VERSION))
 GOLANGCI_LINT ?= $(TOOLS_BIN)/golangci-lint
+DOCKER ?= docker
+COMPOSE ?= $(DOCKER) compose
+IMAGE ?= ethindexer:local
 
-.PHONY: test vet lint lint-config lint-fix lint-install lint-tool check fmt
+.PHONY: test vet lint lint-config lint-fix lint-install lint-tool check fmt docker-build docker-up docker-down docker-logs
 
 test:
 	$(GO) test $(PACKAGES)
@@ -45,3 +48,15 @@ fmt: lint-tool
 	"$(GOLANGCI_LINT)" fmt
 
 check: lint vet test
+
+docker-build:
+	$(DOCKER) build --tag "$(IMAGE)" .
+
+docker-up:
+	$(COMPOSE) up --build --detach
+
+docker-down:
+	$(COMPOSE) down
+
+docker-logs:
+	$(COMPOSE) logs --follow indexer

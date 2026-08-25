@@ -1,0 +1,6 @@
+.git
+.env
+bin/
+configs/config.yaml
+coverage.out
+*.test

@@ -93,6 +93,33 @@ V1 enforces a retention window of at most 50 blocks. Address-event queries are
 cursor-paginated newest first and accept at most 1,000 events per page; a cursor
 whose block hash is no longer canonical is rejected as stale.
 
+## Containers
+
+The production image uses a pinned Go builder and a non-root distroless runtime.
+The local Compose stack starts PostgreSQL, runs all migrations once, and starts
+the indexer only after migration succeeds.
+
+```text
+cp .env.example .env
+# Replace ETH_RPC_URL in .env with a mainnet endpoint.
+make docker-up
+make docker-logs
+```
+
+The API is available at `http://127.0.0.1:8080`. PostgreSQL data is retained in
+the `postgres_data` named volume when `make docker-down` is used. The fixed
+`indexer` database password is for this local stack only and must not be reused
+for production deployments.
+
+Useful commands:
+
+```text
+make docker-build
+make docker-up
+make docker-down
+make docker-logs
+```
+
 ## Development checks
 
 ```text

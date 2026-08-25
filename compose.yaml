@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:17.11-alpine3.24
+    environment:
+      POSTGRES_DB: indexer
+      POSTGRES_USER: indexer
+      POSTGRES_PASSWORD: indexer
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  migrate:
+    image: migrate/migrate:v4.19.1
+    command:
+      - -path=/migrations
+      - -database=postgres://indexer:indexer@postgres:5432/indexer?sslmode=disable
+      - up
+    volumes:
+      - ./migrations:/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  indexer:
+    image: ethindexer:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      ETH_RPC_URL: "${ETH_RPC_URL:?set ETH_RPC_URL in .env or the shell environment}"
+      DATABASE_URL: postgres://indexer:indexer@postgres:5432/indexer?sslmode=disable
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-8080}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 20s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
