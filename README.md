@@ -8,6 +8,25 @@ The V1 service intentionally retains only the configured recent block window,
 with a maximum of 50 blocks. It is designed as a focused indexer rather than a
 complete archive node or blockchain explorer.
 
+## Contents
+
+- [What is included](#what-is-included)
+- [What the service does](#what-the-service-does)
+- [Architecture](#architecture)
+- [Storage model](#storage-model)
+- [Requirements](#requirements)
+- [Quick start with Docker](#quick-start-with-docker)
+- [Run natively](#run-natively)
+- [Configuration](#configuration)
+- [HTTP API](#http-api)
+- [Verify the running service](#verify-the-running-service)
+- [Development and tests](#development-and-tests)
+- [Operational notes](#operational-notes)
+- [Improvements and next steps](#improvements-and-next-steps)
+- [Troubleshooting](#troubleshooting)
+- [Security notes](#security-notes)
+- [AI-assisted development](#ai-assisted-development)
+
 ## What is included
 
 - Ethereum mainnet polling through JSON-RPC using go-ethereum/ethclient.
@@ -517,6 +536,75 @@ create and drop test schemas.
 - Normal API reads are not blocked by the advisory writer lock.
 - Removing old blocks and reorg suffixes uses foreign-key cascades for
   transactions and logs.
+
+## Improvements and next steps
+
+The suggested order keeps each improvement small and independently reviewable.
+
+### 1. V1.1: observability foundation
+
+Add OpenTelemetry metrics and traces while keeping the existing Zerolog logs.
+Initialize telemetry once in cmd/indexer and instrument only the main
+boundaries: HTTP, synchronization, Ethereum RPC, and PostgreSQL.
+
+Start with a small set of signals:
+
+- Indexed head, sync lag, last successful sync, retries, and sync duration.
+- RPC request count, errors, and latency by method.
+- PostgreSQL update duration and errors.
+- HTTP request count, status, and latency by route.
+
+Use an optional local stack of OpenTelemetry Collector, Prometheus, Tempo, and
+Grafana. Avoid block hashes, transaction hashes, addresses, and request IDs as
+metric labels because they create high-cardinality data.
+
+The first dashboard should answer four questions: Is indexing current? Is the
+RPC provider healthy? Are database writes succeeding? Is the API healthy?
+Alert on prolonged sync failure, increasing block lag, repeated RPC errors, and
+PostgreSQL update failures.
+
+Telemetry should be optional, should flush during graceful shutdown, and should
+never stop indexing when the exporter is unavailable.
+
+References: [OpenTelemetry Go](https://opentelemetry.io/docs/languages/go/),
+[Collector](https://opentelemetry.io/docs/collector/deploy/), and
+[Prometheus label guidance](https://prometheus.io/docs/practices/naming/).
+
+### 2. V1.2: RPC resilience
+
+- Retry only the failed block with bounded jittered backoff before retrying the
+  entire range.
+- Add an optional request-rate limit alongside the concurrency limit.
+- Test timeouts, throttling, partial range failures, and shutdown during retry.
+
+### 3. V1.3: richer chain data
+
+- Store receipts, transaction status, effective gas price, gas used, and
+  contract-creation address.
+- Keep internal calls and execution traces as a separate optional feature
+  because they require more expensive provider APIs.
+
+### 4. API usability
+
+- Add an OpenAPI specification and example responses.
+- Add a status endpoint containing selected head, indexed head, lag, and last
+  successful sync.
+- Consider paginated block and transaction lists plus indexed event-topic
+  filters.
+
+### 5. Delivery and production hardening
+
+- Add CI for make check, PostgreSQL integration tests, migrations, and the
+  Docker build.
+- Add dependency and container-image scanning.
+- Add load tests, backup and recovery documentation, and a synthetic check that
+  compares sampled indexed data with Ethereum RPC.
+
+### 6. Scaling beyond V1
+
+Measure database size, synchronization time, API latency, and batch memory
+before increasing the 50-block window. Longer history may require partitioning,
+resumable backfills, checkpoints, and different API pagination guarantees.
 
 ## Troubleshooting
 
