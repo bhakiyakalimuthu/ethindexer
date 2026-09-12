@@ -36,6 +36,9 @@ func TestSyncOnceFetchesAndStoresConfiguredWindow(t *testing.T) {
 	if result.ReplaceFrom != 10 {
 		t.Fatalf("replace from = %d, want 10", result.ReplaceFrom)
 	}
+	if result.Mode != SyncModeInitialLoad || result.StoredTip != nil || result.Reorg != nil {
+		t.Fatalf("initial synchronization metadata = %#v", result)
+	}
 	if result.BlockCount != 3 || result.TransactionCount != 0 || result.EventCount != 0 {
 		t.Fatalf("SyncOnce() counts = %#v", result)
 	}
@@ -83,6 +86,9 @@ func TestSyncOnceAppendsOnlyNewBlocksAndPrunesRetention(t *testing.T) {
 	if result.FromBlock != 11 || result.ReplaceFrom != 13 || result.BlockCount != 2 {
 		t.Fatalf("append result = %#v", result)
 	}
+	if result.Mode != SyncModeAppend || result.StoredTip == nil || result.StoredTip.Number != 12 || result.StoredTip.Hash != initialBlocks[12].Hash() || result.Reorg != nil {
+		t.Fatalf("append synchronization metadata = %#v", result)
+	}
 	if got, want := chain.fetchedBlockNumbers(), []uint64{13, 14}; !slices.Equal(got, want) {
 		t.Fatalf("fetched blocks = %v, want %v", got, want)
 	}
@@ -116,6 +122,9 @@ func TestSyncOnceSkipsBlockFetchWhenAlreadyCurrent(t *testing.T) {
 	if result.FromBlock != 10 || result.ReplaceFrom != 13 || result.BlockCount != 0 {
 		t.Fatalf("current result = %#v", result)
 	}
+	if result.Mode != SyncModeCurrent || result.StoredTip == nil || result.StoredTip.Number != 12 || result.Reorg != nil {
+		t.Fatalf("current synchronization metadata = %#v", result)
+	}
 	if got := chain.fetchedBlockNumbers(); len(got) != 0 {
 		t.Fatalf("fetched blocks = %v, want none", got)
 	}
@@ -143,6 +152,14 @@ func TestSyncOnceReplacesBlocksAfterCommonAncestor(t *testing.T) {
 	if result.FromBlock != 10 || result.ReplaceFrom != 11 || result.BlockCount != 3 {
 		t.Fatalf("reorg result = %#v", result)
 	}
+	if result.Mode != SyncModeReorg || result.StoredTip == nil || result.StoredTip.Number != 12 || result.StoredTip.Hash != oldBlocks[12].Hash() {
+		t.Fatalf("reorg synchronization metadata = %#v", result)
+	}
+	if result.Reorg == nil || result.Reorg.CommonAncestor == nil ||
+		result.Reorg.CommonAncestor.Number != 10 || result.Reorg.CommonAncestor.Hash != oldBlocks[10].Hash() ||
+		result.Reorg.ReplacedFrom != 11 || result.Reorg.ReplacedTo != 12 || result.Reorg.ReplacedBlockCount != 2 {
+		t.Fatalf("reorg details = %#v", result.Reorg)
+	}
 	if got, want := chain.fetchedBlockNumbers(), []uint64{11, 12, 13}; !slices.Equal(got, want) {
 		t.Fatalf("fetched blocks = %v, want %v", got, want)
 	}
@@ -156,6 +173,33 @@ func TestSyncOnceReplacesBlocksAfterCommonAncestor(t *testing.T) {
 	}
 	if _, err := memory.BlockByNumber(context.Background(), 9); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("pruned pre-window block lookup = %v, want store.ErrNotFound", err)
+	}
+}
+
+func TestSyncOnceReportsReorgWithoutAncestorInRetainedWindow(t *testing.T) {
+	oldBlocks := canonicalTestBlocks(8, 12)
+	chain := &syncTestChain{blocks: oldBlocks, head: oldBlocks[12].Header()}
+	memory := store.NewMemory()
+	config := validSyncTestConfig()
+	config.BlockWindow = 4
+	syncer := NewSyncer(NewFetcher(chain, 1), chain, memory, config, zerolog.Nop())
+
+	if _, err := syncer.SyncOnce(context.Background()); err != nil {
+		t.Fatalf("initial SyncOnce() error = %v", err)
+	}
+	newBlocks := forkedTestBlocks(oldBlocks, 8, 13)
+	chain.setCanonicalChain(newBlocks, 13)
+
+	result, err := syncer.SyncOnce(context.Background())
+	if err != nil {
+		t.Fatalf("deep reorg SyncOnce() error = %v", err)
+	}
+	if result.Mode != SyncModeReorg || result.FromBlock != 10 || result.ReplaceFrom != 10 || result.BlockCount != 4 {
+		t.Fatalf("deep reorg result = %#v", result)
+	}
+	if result.Reorg == nil || result.Reorg.CommonAncestor != nil ||
+		result.Reorg.ReplacedFrom != 10 || result.Reorg.ReplacedTo != 12 || result.Reorg.ReplacedBlockCount != 3 {
+		t.Fatalf("deep reorg details = %#v", result.Reorg)
 	}
 }
 
@@ -178,6 +222,9 @@ func TestSyncOnceRefetchesFullWindowWithoutStoredOverlap(t *testing.T) {
 	}
 	if result.FromBlock != 8 || result.ReplaceFrom != 8 || result.BlockCount != 3 {
 		t.Fatalf("non-overlap result = %#v", result)
+	}
+	if result.Mode != SyncModeFullReload || result.StoredTip == nil || result.StoredTip.Number != 3 || result.Reorg != nil {
+		t.Fatalf("full reload synchronization metadata = %#v", result)
 	}
 	if got, want := chain.fetchedBlockNumbers(), []uint64{8, 9, 10}; !slices.Equal(got, want) {
 		t.Fatalf("fetched blocks = %v, want %v", got, want)

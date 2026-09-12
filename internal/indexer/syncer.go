@@ -53,7 +53,9 @@ func NewSyncer(fetcher *Fetcher, chain ethereum.Reader, indexStore store.IndexSt
 }
 
 type SyncResult struct {
-	Head domain.ChainTip
+	Head      domain.ChainTip
+	StoredTip *domain.ChainTip
+	Mode      SyncMode
 	// FromBlock is the lower bound of the retained canonical window.
 	FromBlock uint64
 	// ReplaceFrom is the first block fetched or removed during this cycle.
@@ -62,6 +64,30 @@ type SyncResult struct {
 	TransactionCount int
 	EventCount       int
 	SyncedAt         time.Time
+	Reorg            *ReorgResult
+}
+
+type SyncMode string
+
+const (
+	SyncModeInitialLoad SyncMode = "initial_load"
+	SyncModeCurrent     SyncMode = "current"
+	SyncModeAppend      SyncMode = "append"
+	SyncModeFullReload  SyncMode = "full_reload"
+	SyncModeReorg       SyncMode = "reorg"
+)
+
+type ReorgResult struct {
+	CommonAncestor     *domain.ChainTip
+	ReplacedFrom       uint64
+	ReplacedTo         uint64
+	ReplacedBlockCount uint64
+}
+
+type replacementPlan struct {
+	From  uint64
+	Mode  SyncMode
+	Reorg *ReorgResult
 }
 
 func (s *Syncer) SyncOnce(ctx context.Context) (SyncResult, error) {
@@ -80,15 +106,17 @@ func (s *Syncer) SyncOnce(ctx context.Context) (SyncResult, error) {
 
 	retainFrom := windowStart(headNumber, s.config.BlockWindow)
 	selectedHash := head.Hash()
+
 	storedTip, err := s.store.CanonicalTip(ctx)
 	if err != nil {
 		return SyncResult{}, fmt.Errorf("read stored canonical tip: %w", err)
 	}
 
-	replaceFrom, err := s.replacementStart(ctx, storedTip, headNumber, selectedHash, retainFrom)
+	plan, err := s.replacementStart(ctx, storedTip, headNumber, selectedHash, retainFrom)
 	if err != nil {
 		return SyncResult{}, err
 	}
+	replaceFrom := plan.From
 
 	var bundles []domain.BlockBundle
 	if replaceFrom <= headNumber {
@@ -130,10 +158,13 @@ func (s *Syncer) SyncOnce(ctx context.Context) (SyncResult, error) {
 			Number: headNumber,
 			Hash:   selectedHash,
 		},
+		StoredTip:   cloneChainTip(storedTip),
+		Mode:        plan.Mode,
 		FromBlock:   retainFrom,
 		ReplaceFrom: replaceFrom,
 		BlockCount:  len(bundles),
 		SyncedAt:    syncedAt,
+		Reorg:       plan.Reorg,
 	}
 	for _, bundle := range bundles {
 		result.TransactionCount += len(bundle.Transactions)
@@ -148,29 +179,54 @@ func (s *Syncer) replacementStart(
 	headNumber uint64,
 	headHash common.Hash,
 	retainFrom uint64,
-) (uint64, error) {
-	if storedTip == nil || storedTip.Number > headNumber || storedTip.Number < retainFrom {
-		return retainFrom, nil
+) (replacementPlan, error) {
+	if storedTip == nil {
+		return replacementPlan{From: retainFrom, Mode: SyncModeInitialLoad}, nil
+	}
+	if storedTip.Number > headNumber || storedTip.Number < retainFrom {
+		return replacementPlan{From: retainFrom, Mode: SyncModeFullReload}, nil
 	}
 
 	if storedTip.Number == headNumber && storedTip.Hash == headHash {
 		if headNumber == math.MaxUint64 {
-			return 0, fmt.Errorf("%w: cannot advance past maximum block number", ErrInconsistentBlockData)
+			return replacementPlan{}, fmt.Errorf("%w: cannot advance past maximum block number", ErrInconsistentBlockData)
 		}
-		return headNumber + 1, nil
+		return replacementPlan{From: headNumber + 1, Mode: SyncModeCurrent}, nil
 	}
 
 	ancestor, found, err := s.commonAncestor(ctx, *storedTip, headNumber, headHash, retainFrom)
 	if err != nil {
-		return 0, err
+		return replacementPlan{}, err
 	}
 	if !found {
-		return retainFrom, nil
+		return replacementPlan{
+			From: retainFrom,
+			Mode: SyncModeReorg,
+			Reorg: &ReorgResult{
+				ReplacedFrom:       retainFrom,
+				ReplacedTo:         storedTip.Number,
+				ReplacedBlockCount: storedTip.Number - retainFrom + 1,
+			},
+		}, nil
 	}
-	if ancestor == math.MaxUint64 {
-		return 0, fmt.Errorf("%w: cannot advance past maximum block number", ErrInconsistentBlockData)
+	if ancestor.Number == math.MaxUint64 {
+		return replacementPlan{}, fmt.Errorf("%w: cannot advance past maximum block number", ErrInconsistentBlockData)
 	}
-	return ancestor + 1, nil
+	if ancestor.Number == storedTip.Number {
+		return replacementPlan{From: ancestor.Number + 1, Mode: SyncModeAppend}, nil
+	}
+
+	replaceFrom := ancestor.Number + 1
+	return replacementPlan{
+		From: replaceFrom,
+		Mode: SyncModeReorg,
+		Reorg: &ReorgResult{
+			CommonAncestor:     cloneChainTip(&ancestor),
+			ReplacedFrom:       replaceFrom,
+			ReplacedTo:         storedTip.Number,
+			ReplacedBlockCount: storedTip.Number - replaceFrom + 1,
+		},
+	}, nil
 }
 
 func (s *Syncer) commonAncestor(
@@ -179,28 +235,36 @@ func (s *Syncer) commonAncestor(
 	headNumber uint64,
 	headHash common.Hash,
 	retainFrom uint64,
-) (uint64, bool, error) {
+) (domain.ChainTip, bool, error) {
 	start := min(storedTip.Number, headNumber)
 	for number := start; ; number-- {
 		storedHash, err := s.storedHash(ctx, storedTip, number)
 		if errors.Is(err, store.ErrNotFound) {
-			return 0, false, nil
+			return domain.ChainTip{}, false, nil
 		}
 		if err != nil {
-			return 0, false, fmt.Errorf("read stored canonical hash for block %d: %w", number, err)
+			return domain.ChainTip{}, false, fmt.Errorf("read stored canonical hash for block %d: %w", number, err)
 		}
 
 		chainHash, err := s.chainHash(ctx, number, headNumber, headHash)
 		if err != nil {
-			return 0, false, err
+			return domain.ChainTip{}, false, err
 		}
 		if storedHash == chainHash {
-			return number, true, nil
+			return domain.ChainTip{Number: number, Hash: storedHash}, true, nil
 		}
 		if number == retainFrom {
-			return 0, false, nil
+			return domain.ChainTip{}, false, nil
 		}
 	}
+}
+
+func cloneChainTip(tip *domain.ChainTip) *domain.ChainTip {
+	if tip == nil {
+		return nil
+	}
+	cloned := *tip
+	return &cloned
 }
 
 func (s *Syncer) storedHash(ctx context.Context, storedTip domain.ChainTip, number uint64) (common.Hash, error) {

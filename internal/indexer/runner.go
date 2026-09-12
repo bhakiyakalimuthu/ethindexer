@@ -117,21 +117,52 @@ func (s *Syncer) validateRunConfig() error {
 
 func (s *Syncer) logSyncResult(result SyncResult) {
 	level := zerolog.InfoLevel
-	if result.BlockCount == 0 {
+	if result.Reorg != nil {
+		level = zerolog.WarnLevel
+	} else if result.BlockCount == 0 {
 		level = zerolog.DebugLevel
 	}
 
-	s.logger.WithLevel(level).
+	event := s.logger.WithLevel(level).
 		Uint64("chain_id", s.config.ChainID).
-		Uint64("from_block", result.FromBlock).
-		Uint64("replace_from", result.ReplaceFrom).
-		Uint64("to_block", result.Head.Number).
-		Str("head_hash", result.Head.Hash.Hex()).
-		Int("blocks", result.BlockCount).
-		Int("transactions", result.TransactionCount).
-		Int("events", result.EventCount).
-		Time("synced_at", result.SyncedAt).
-		Msg("Ethereum block window synchronized")
+		Str("head_mode", string(s.config.HeadMode)).
+		Str("sync_mode", string(result.Mode)).
+		Bool("stored_tip_present", result.StoredTip != nil).
+		Uint64("selected_head_number", result.Head.Number).
+		Str("selected_head_hash", result.Head.Hash.Hex()).
+		Uint64("retained_from_block", result.FromBlock).
+		Uint64("retained_to_block", result.Head.Number).
+		Uint64("retained_blocks", result.Head.Number-result.FromBlock+1).
+		Int("fetched_blocks", result.BlockCount).
+		Int("fetched_transactions", result.TransactionCount).
+		Int("fetched_events", result.EventCount).
+		Bool("reorg_detected", result.Reorg != nil).
+		Time("synced_at", result.SyncedAt)
+
+	if result.StoredTip != nil {
+		event = event.
+			Uint64("stored_tip_number", result.StoredTip.Number).
+			Str("stored_tip_hash", result.StoredTip.Hash.Hex())
+	}
+	if result.BlockCount > 0 {
+		event = event.
+			Uint64("fetched_from_block", result.ReplaceFrom).
+			Uint64("fetched_to_block", result.Head.Number)
+	}
+	if result.Reorg != nil {
+		event = event.
+			Uint64("reorg_replaced_from_block", result.Reorg.ReplacedFrom).
+			Uint64("reorg_replaced_to_block", result.Reorg.ReplacedTo).
+			Uint64("reorg_replaced_blocks", result.Reorg.ReplacedBlockCount).
+			Bool("common_ancestor_found", result.Reorg.CommonAncestor != nil)
+		if result.Reorg.CommonAncestor != nil {
+			event = event.
+				Uint64("common_ancestor_number", result.Reorg.CommonAncestor.Number).
+				Str("common_ancestor_hash", result.Reorg.CommonAncestor.Hash.Hex())
+		}
+	}
+
+	event.Msg("Ethereum block window synchronized")
 }
 
 func isPermanentSyncError(err error) bool {

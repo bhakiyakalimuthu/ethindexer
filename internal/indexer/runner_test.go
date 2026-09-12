@@ -1,16 +1,83 @@
 package indexer
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
 	"time"
 
+	"ethindexer/internal/domain"
 	"ethindexer/internal/store"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/rs/zerolog"
 )
+
+func TestLogSyncResultIncludesChainDecisionAndReorgDetails(t *testing.T) {
+	var output bytes.Buffer
+	syncer := &Syncer{
+		config: Config{ChainID: 1, HeadMode: domain.HeadLatest},
+		logger: zerolog.New(&output),
+	}
+	storedTip := &domain.ChainTip{Number: 104, Hash: common.HexToHash("0x104")}
+	ancestor := &domain.ChainTip{Number: 102, Hash: common.HexToHash("0x102")}
+
+	syncer.logSyncResult(SyncResult{
+		Head:             domain.ChainTip{Number: 106, Hash: common.HexToHash("0x106")},
+		StoredTip:        storedTip,
+		Mode:             SyncModeReorg,
+		FromBlock:        102,
+		ReplaceFrom:      103,
+		BlockCount:       4,
+		TransactionCount: 10,
+		EventCount:       20,
+		SyncedAt:         time.Date(2026, time.August, 28, 12, 0, 0, 0, time.UTC),
+		Reorg: &ReorgResult{
+			CommonAncestor:     ancestor,
+			ReplacedFrom:       103,
+			ReplacedTo:         104,
+			ReplacedBlockCount: 2,
+		},
+	})
+
+	var entry map[string]any
+	if err := json.Unmarshal(output.Bytes(), &entry); err != nil {
+		t.Fatalf("decode log entry: %v", err)
+	}
+	want := map[string]any{
+		"level":                     "warn",
+		"head_mode":                 "latest",
+		"sync_mode":                 "reorg",
+		"stored_tip_present":        true,
+		"stored_tip_number":         float64(104),
+		"stored_tip_hash":           storedTip.Hash.Hex(),
+		"selected_head_number":      float64(106),
+		"selected_head_hash":        common.HexToHash("0x106").Hex(),
+		"retained_from_block":       float64(102),
+		"retained_to_block":         float64(106),
+		"retained_blocks":           float64(5),
+		"fetched_from_block":        float64(103),
+		"fetched_to_block":          float64(106),
+		"fetched_blocks":            float64(4),
+		"fetched_transactions":      float64(10),
+		"fetched_events":            float64(20),
+		"reorg_detected":            true,
+		"reorg_replaced_from_block": float64(103),
+		"reorg_replaced_to_block":   float64(104),
+		"reorg_replaced_blocks":     float64(2),
+		"common_ancestor_found":     true,
+		"common_ancestor_number":    float64(102),
+		"common_ancestor_hash":      ancestor.Hash.Hex(),
+	}
+	for field, wantValue := range want {
+		if got := entry[field]; got != wantValue {
+			t.Errorf("log field %q = %#v, want %#v", field, got, wantValue)
+		}
+	}
+}
 
 func TestSyncWithRetryUsesBoundedExponentialBackoff(t *testing.T) {
 	syncer := &Syncer{
